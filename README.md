@@ -17,7 +17,7 @@ Lector de libros `.txt` en voz alta, pensado para escuchar libros largos con com
 - **Recuerda dónde te quedaste** en cada libro.
 - **Funciona sin conexión** y se instala como app (PWA).
 - **Segundo plano:** sigue leyendo con otras apps abiertas o la pantalla bloqueada, con un reproductor en las notificaciones (pausa, frase anterior/siguiente y barra de progreso del libro). Se pausa sola si entra una llamada u otra app pone audio. Funciona mejor con la voz neuronal; con la voz del dispositivo depende de Android.
-- **Se actualiza sola:** cuando hay una versión nueva, la app se recarga en cuanto no está leyendo, en el mismo libro y frase.
+- **Se actualiza sola:** cuando hay una versión nueva, la app se recarga en un momento tranquilo (en la biblioteca, sin leer ni importar ni descargar). Tu posición en cada libro se conserva.
 - **Archivos .txt** en UTF-8, UTF-16 o Windows-1252 (los `.txt` viejos en español). Las líneas cortadas a mano se unen en párrafos.
 
 ## Desarrollo

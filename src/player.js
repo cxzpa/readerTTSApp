@@ -20,10 +20,17 @@ export class Player extends EventTarget {
   }
 
   load(chunks, index = 0) {
-    this.stop();
+    const wasPlaying = this.playing;
+    this.token++;
+    this.playing = false;
+    this.engine?.stop();
     this.chunks = chunks;
     this.ended = false;
     this.index = clamp(index, 0, Math.max(0, chunks.length - 1));
+    // Only announce "paused" if something was playing, and only after the new
+    // index is set: a listener saving the position must never save index 0
+    // for a book that was just opened somewhere else.
+    if (wasPlaying) this.emit('state', { playing: false });
     this.emit('index', { index: this.index });
   }
 
@@ -152,9 +159,8 @@ export class Player extends EventTarget {
       this.index = next;
       // Timers can be clamped for minutes while the page is in the background,
       // so check the sleep timer here too and skip the paragraph pause there.
-      if (this.sleepAt && Date.now() >= this.sleepAt) {
-        this.#sleep();
-        return;
+      if (this.sleepAt && Date.now() >= this.sleepAt && !this.sleeping) {
+        this.#sleep(); // fades out while reading continues, then pauses
       }
       if (this.chunks[next].p !== chunk.p && this.paragraphPause > 0 && !document.hidden) {
         await wait(this.paragraphPause / (this.engine.rate || 1));

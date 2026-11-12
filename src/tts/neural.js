@@ -43,6 +43,8 @@ function getWorker() {
       const err = new Error(e.message || 'Error al iniciar la voz neuronal');
       pending.forEach((p) => p.reject(err));
       pending.clear();
+      // Usually means this page is an old version whose files were replaced.
+      window.dispatchEvent(new Event('lector:voice-failed'));
     };
     worker.postMessage({ type: 'init', baseUrl: new URL('./', document.baseURI).href });
   }

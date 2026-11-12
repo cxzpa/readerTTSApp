@@ -23,7 +23,8 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((k) => k.startsWith('lector-') && k !== CACHE && k !== VENDOR_CACHE).map((k) => caches.delete(k))))
+      // Only old app/vendor caches; 'lector-models' (downloaded voices) is kept.
+      .then((keys) => Promise.all(keys.filter((k) => /^lector-(vendor-)?[0-9a-f]{12}$/.test(k) && k !== CACHE && k !== VENDOR_CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim()),
   );
 });

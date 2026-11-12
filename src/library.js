@@ -3,6 +3,7 @@ import { listBooks, addBook, deleteBook, hashText, getText, requestPersistence, 
 import { decodeText, detectLang, parseBook, titleFromFileName } from './text.js';
 import { getSettings, setSettings } from './settings.js';
 import { unlockAudio } from './voice.js';
+import { busyStart, busyEnd } from './busy.js';
 import { escapeHtml, formatDuration, relativeDate, coverColor, icon, toast } from './ui.js';
 
 const $ = (id) => document.getElementById(id);
@@ -74,6 +75,15 @@ export async function importFiles(files) {
     return;
   }
   requestPersistence();
+  busyStart('import');
+  try {
+    await importAll(txt, skipped);
+  } finally {
+    busyEnd('import');
+  }
+}
+
+async function importAll(txt, skipped) {
   let firstId = null;
   let added = 0;
   for (const file of txt) {
@@ -301,7 +311,11 @@ function setupReorder() {
     const moved = drag.moved;
     drag = null;
     if (moved) suppressClickUntil = Date.now() + 400;
-    if (commit && moved) await saveDomOrder();
+    try {
+      if (commit && moved) await saveDomOrder();
+    } finally {
+      busyEnd('drag');
+    }
   };
 
   list.addEventListener('pointerdown', (e) => {
@@ -311,6 +325,7 @@ function setupReorder() {
     const li = handle.closest('.book');
     const rect = li.getBoundingClientRect();
     drag = { li, pointerId: e.pointerId, grabY: e.clientY - rect.top, y: e.clientY, moved: false, raf: 0 };
+    busyStart('drag');
     handle.setPointerCapture(e.pointerId);
     li.classList.add('dragging');
     list.classList.add('is-dragging');

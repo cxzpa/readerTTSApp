@@ -1,7 +1,8 @@
 import { hydrateIcons } from './ui.js';
 import { getSettings, onSettingsChange } from './settings.js';
 import { initLibrary, refreshLibrary } from './library.js';
-import { initReader, openBook, closeBook, currentBookLang, isReading } from './reader.js';
+import { initReader, openBook, closeBook, currentBookLang, isReading, flushPosition } from './reader.js';
+import { isBusy } from './busy.js';
 import { openSettings } from './settings-ui.js';
 
 const $ = (id) => document.getElementById(id);
@@ -61,13 +62,31 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 
   // When a new version takes over, files of the old one are gone from the
   // cache, so this page could fail to load parts it hasn't used yet (like the
-  // neural voice). Reload as soon as it's not reading; the reader reopens the
-  // same book at the saved position.
+  // neural voice). Apply it at a quiet moment: on the library screen, visible,
+  // not reading, no sleep timer, no sheet open, nothing importing/downloading/
+  // dragging. If the neural voice fails to start in an old page, reload then.
   let hadController = !!navigator.serviceWorker.controller;
   let updateReady = false;
-  const reloadIfIdle = () => {
-    if (updateReady && !isReading()) location.reload();
+  let reloading = false;
+  const reload = async () => {
+    if (reloading) return;
+    reloading = true;
+    await flushPosition();
+    location.reload();
   };
+  const reloadIfIdle = () => {
+    if (!updateReady || reloading) return;
+    const quiet =
+      !$('library').hidden &&
+      document.visibilityState === 'visible' &&
+      !isReading() &&
+      !isBusy() &&
+      !document.querySelector('dialog[open]');
+    if (quiet) reload();
+  };
+  window.addEventListener('lector:voice-failed', () => updateReady && !isReading() && reload());
+  document.querySelectorAll('dialog').forEach((d) => d.addEventListener('close', reloadIfIdle));
+  window.addEventListener('hashchange', () => setTimeout(reloadIfIdle, 0));
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (!hadController) {
       hadController = true; // first install, nothing old to replace
@@ -80,6 +99,7 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   // An installed app can stay open for days: look for updates when it comes back.
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
+      reloadIfIdle();
       navigator.serviceWorker.getRegistration().then((r) => r?.update()).catch(() => {});
     }
   });

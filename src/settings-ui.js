@@ -11,6 +11,7 @@ import {
   synthesize,
 } from './tts/neural.js';
 import { icon, toast, escapeHtml } from './ui.js';
+import { busyStart, busyEnd } from './busy.js';
 
 const $ = (id) => document.getElementById(id);
 const dialog = $('settings');
@@ -120,6 +121,7 @@ async function renderNeural() {
 function download(voiceId) {
   if (downloading.has(voiceId) || downloaded.has(voiceId)) return Promise.resolve();
   downloading.set(voiceId, 0);
+  busyStart(`download:${voiceId}`);
   renderNeural();
   return loadNeuralVoice(voiceId)
     .then(() => {
@@ -131,7 +133,10 @@ function download(voiceId) {
       downloading.delete(voiceId);
       toast(`No se pudo descargar la voz: ${err.message}`, 6000);
     })
-    .finally(() => dialog.open && renderNeural());
+    .finally(() => {
+      busyEnd(`download:${voiceId}`);
+      if (dialog.open) renderNeural();
+    });
 }
 
 onNeuralProgress(({ voiceId, loaded, total }) => {

@@ -204,8 +204,6 @@ export function closeBook() {
   clearWord();
   book = null;
   chunks = [];
-  spans = [];
-  activeIndex = -1;
   player.load([]); // so media keys can't start a book that is no longer on screen
   spans = [];
   activeIndex = -1;
@@ -217,8 +215,9 @@ export function closeBook() {
   }
 }
 
+/** Reading, or a sleep timer is set: an automatic reload would lose it. */
 export function isReading() {
-  return player.playing;
+  return player.playing || !!player.sleepAt;
 }
 
 export function currentBookLang() {
@@ -363,6 +362,14 @@ function updateStatus() {
 }
 
 let lastSave = 0;
+let lastWrite = Promise.resolve();
+
+/** Wait for the latest position write (used before reloading the page). */
+export function flushPosition() {
+  savePosition(true);
+  return lastWrite;
+}
+
 function savePosition(now) {
   if (!book) return;
   const id = book.id;
@@ -375,11 +382,14 @@ function savePosition(now) {
     const progress = chunks.length > 1 ? (charsAfter[0] - charsAfter[position]) / charsAfter[0] : 0;
     // Keep the current sentence so the library can show it without re-reading the book.
     const snippet = (chunks[position]?.text || '').trim().slice(0, 240);
-    updateBook(id, { position, progress: player.ended ? 1 : progress, snippet, lastOpenedAt: Date.now() });
+    lastWrite = updateBook(id, { position, progress: player.ended ? 1 : progress, snippet, lastOpenedAt: Date.now() }).catch(
+      () => {},
+    );
   };
-  // In the background timers may not fire for a long time, so write right away there;
-  // otherwise at most every few seconds while reading.
-  if (now || document.hidden || Date.now() - lastSave > 5000) write();
+  // Write right away when paused (a seek or a tap is a deliberate move) and in the
+  // background (timers may not fire for a long time); otherwise at most every few
+  // seconds while reading.
+  if (now || !player.playing || document.hidden || Date.now() - lastSave > 5000) write();
   else if (!saveTimer) saveTimer = setTimeout(write, 1500);
 }
 
