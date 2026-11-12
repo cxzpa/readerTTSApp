@@ -172,6 +172,7 @@ svg.i {
 
 .continue-card h2 {
   margin: 0;
+  overflow-wrap: anywhere;
   font-family: var(--serif);
   font-size: 1.3rem;
   line-height: 1.25;
@@ -285,6 +286,13 @@ svg.i {
   border-radius: 10px;
   border: 1px solid var(--line);
   background: var(--surface);
+}
+
+.inline-icon svg.i {
+  width: 1.1em;
+  height: 1.1em;
+  vertical-align: -0.2em;
+  fill: currentColor;
 }
 
 .manual-hint {

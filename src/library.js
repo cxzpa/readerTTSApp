@@ -146,13 +146,15 @@ async function renderContinue() {
     <button class="play-btn small" aria-label="Continuar ${escapeHtml(last.title)}">${icon('play')}</button>
     <div class="progress"><span style="width:${(last.progress * 100).toFixed(1)}%"></span></div>`;
   card.hidden = false;
-  // Show where the reader left off.
-  const text = await getText(last.id);
-  if (text && card.dataset.book === last.id) {
+  // Show where the reader left off (saved with the position; older books fall back to parsing).
+  let snippet = last.snippet;
+  if (snippet === undefined) {
+    const text = await getText(last.id);
+    if (!text || card.dataset.book !== last.id) return;
     const { chunks } = parseBook(text, last.lang);
-    const snippet = chunks[Math.min(last.position, chunks.length - 1)]?.text.trim() || '';
-    card.querySelector('.snippet').textContent = snippet ? `“${snippet}”` : bookStatus(last);
+    snippet = chunks[Math.min(last.position, chunks.length - 1)]?.text.trim() || '';
   }
+  card.querySelector('.snippet').textContent = snippet ? `“${snippet}”` : bookStatus(last);
 }
 
 // ---- Sorting ----

@@ -1,7 +1,7 @@
 import { hydrateIcons } from './ui.js';
 import { getSettings, onSettingsChange } from './settings.js';
 import { initLibrary, refreshLibrary } from './library.js';
-import { initReader, openBook, closeBook, currentBookLang } from './reader.js';
+import { initReader, openBook, closeBook, currentBookLang, isReading } from './reader.js';
 import { openSettings } from './settings-ui.js';
 
 const $ = (id) => document.getElementById(id);
@@ -58,4 +58,29 @@ route();
 // Offline support (only in the built app, so development always shows fresh code).
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
+
+  // When a new version takes over, files of the old one are gone from the
+  // cache, so this page could fail to load parts it hasn't used yet (like the
+  // neural voice). Reload as soon as it's not reading; the reader reopens the
+  // same book at the saved position.
+  let hadController = !!navigator.serviceWorker.controller;
+  let updateReady = false;
+  const reloadIfIdle = () => {
+    if (updateReady && !isReading()) location.reload();
+  };
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController) {
+      hadController = true; // first install, nothing old to replace
+      return;
+    }
+    updateReady = true;
+    reloadIfIdle();
+  });
+  window.addEventListener('lector:idle', reloadIfIdle);
+  // An installed app can stay open for days: look for updates when it comes back.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      navigator.serviceWorker.getRegistration().then((r) => r?.update()).catch(() => {});
+    }
+  });
 }

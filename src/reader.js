@@ -217,6 +217,10 @@ export function closeBook() {
   }
 }
 
+export function isReading() {
+  return player.playing;
+}
+
 export function currentBookLang() {
   return book?.lang || 'es';
 }
@@ -337,7 +341,10 @@ function onState(playing) {
   updatePositionState(true);
   updateWakeLock();
   updateStatus();
-  if (!playing) savePosition(true);
+  if (!playing) {
+    savePosition(true);
+    window.dispatchEvent(new Event('lector:idle'));
+  }
 }
 
 function updateStatus() {
@@ -366,7 +373,9 @@ function savePosition(now) {
     if (!book || book.id !== id) return;
     const position = player.index;
     const progress = chunks.length > 1 ? (charsAfter[0] - charsAfter[position]) / charsAfter[0] : 0;
-    updateBook(id, { position, progress: player.ended ? 1 : progress, lastOpenedAt: Date.now() });
+    // Keep the current sentence so the library can show it without re-reading the book.
+    const snippet = (chunks[position]?.text || '').trim().slice(0, 240);
+    updateBook(id, { position, progress: player.ended ? 1 : progress, snippet, lastOpenedAt: Date.now() });
   };
   // In the background timers may not fire for a long time, so write right away there;
   // otherwise at most every few seconds while reading.
