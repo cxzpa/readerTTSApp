@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Lector TTS</title>
+    <meta name="description" content="Lector de libros .txt en voz alta, local y sin distracciones." />
+    <meta name="theme-color" content="#f7f3ea" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#16171b" media="(prefers-color-scheme: dark)" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./icon-192.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Lector" />
+    <link rel="stylesheet" href="./src/styles.css" />
+  </head>
+  <body>
+    <!-- Biblioteca -->
+    <section id="library" class="view" aria-label="Biblioteca">
+      <header class="lib-header">
+        <div class="brand">
+          <img src="./icon.svg" alt="" width="36" height="36" />
+          <div>
+            <h1>Lector</h1>
+            <p>Tus libros, leídos en voz alta</p>
+          </div>
+        </div>
+        <button class="icon-btn" id="lib-settings" aria-label="Ajustes de voz y lectura" data-icon="settings"></button>
+      </header>
+
+      <main class="lib-main">
+        <div id="continue-card" class="continue-card" hidden></div>
+
+        <div class="add-zone" id="add-zone">
+          <button class="add-btn" id="add-btn" data-icon-left="plus">Abrir libros .txt</button>
+          <p class="add-hint">Puedes elegir varios a la vez. Se guardan aquí para la próxima.</p>
+          <p class="drop-hint">o arrastra los archivos a esta ventana</p>
+          <input type="file" id="file-input" accept=".txt,text/plain" multiple hidden />
+        </div>
+
+        <div class="lib-tools" id="lib-tools" hidden>
+          <h2>Biblioteca</h2>
+          <input type="search" id="lib-search" placeholder="Buscar libro" aria-label="Buscar libro" />
+        </div>
+        <ul id="book-list" class="book-list"></ul>
+        <div id="empty-state" class="empty-state" hidden>
+          <p>Todavía no hay libros.</p>
+          <p>Abre uno o varios archivos <strong>.txt</strong> y empieza a escuchar.</p>
+        </div>
+      </main>
+      <div class="drop-overlay" id="drop-overlay" hidden><p>Suelta los archivos .txt</p></div>
+    </section>
+
+    <!-- Lector -->
+    <section id="reader" class="view" aria-label="Lector" hidden>
+      <header class="reader-top">
+        <button class="icon-btn" id="back-btn" aria-label="Volver a la biblioteca" data-icon="back"></button>
+        <div class="reader-title">
+          <h1 id="r-title"></h1>
+          <p id="r-status"></p>
+        </div>
+        <button class="icon-btn" id="r-settings" aria-label="Ajustes de voz y lectura" data-icon="type"></button>
+      </header>
+
+      <div id="r-scroll" class="reader-scroll">
+        <article id="r-text" class="book-text"></article>
+      </div>
+
+      <button id="follow-btn" class="follow-btn" hidden data-icon-left="target">Volver a la lectura</button>
+
+      <footer class="player">
+        <div class="seek-row">
+          <input type="range" id="r-seek" min="0" max="0" value="0" aria-label="Posición en el libro" />
+        </div>
+        <div class="player-meta">
+          <span id="r-percent">0%</span>
+          <span id="r-remaining"></span>
+        </div>
+        <div class="controls">
+          <button class="chip" id="speed-btn" aria-label="Velocidad">1.0×</button>
+          <button class="icon-btn big" id="prev-btn" aria-label="Frase anterior" data-icon="prev"></button>
+          <button class="play-btn" id="play-btn" aria-label="Leer" data-icon="play"></button>
+          <button class="icon-btn big" id="next-btn" aria-label="Frase siguiente" data-icon="next"></button>
+          <button class="chip" id="sleep-btn" aria-label="Temporizador para dormir" data-icon-left="moon"></button>
+        </div>
+      </footer>
+    </section>
+
+    <!-- Ajustes -->
+    <dialog id="settings" class="sheet" aria-label="Ajustes">
+      <form method="dialog" class="sheet-inner">
+        <div class="sheet-head">
+          <h2>Ajustes</h2>
+          <button class="icon-btn" value="close" aria-label="Cerrar" data-icon="close"></button>
+        </div>
+
+        <h3>Voz</h3>
+        <div class="segmented" role="radiogroup" aria-label="Tipo de voz">
+          <label><input type="radio" name="engine" value="system" /> <span>Del dispositivo</span></label>
+          <label><input type="radio" name="engine" value="neural" /> <span>Neuronal (natural)</span></label>
+        </div>
+
+        <div id="system-voice-box" class="field">
+          <label for="system-voice">Voz del dispositivo</label>
+          <div class="row">
+            <select id="system-voice"></select>
+            <button type="button" class="chip" id="test-system" data-icon-left="play">Probar</button>
+          </div>
+          <p class="help" id="system-help">Las voces marcadas con ★ suelen sonar más naturales. Puedes instalar más voces en los ajustes de texto a voz de tu dispositivo.</p>
+        </div>
+
+        <div id="neural-voice-box" class="field" hidden>
+          <p class="help">Voz natural que funciona sin internet. Se descarga una sola vez y queda guardada en este dispositivo.</p>
+          <ul id="neural-list" class="neural-list"></ul>
+        </div>
+
+        <div class="field">
+          <label for="rate">Velocidad <output id="rate-out"></output></label>
+          <input type="range" id="rate" min="0.5" max="2" step="0.05" />
+        </div>
+        <div class="field" id="pitch-field">
+          <label for="pitch">Tono <output id="pitch-out"></output></label>
+          <input type="range" id="pitch" min="0.5" max="1.5" step="0.05" />
+        </div>
+        <div class="field">
+          <label for="pause">Pausa entre párrafos <output id="pause-out"></output></label>
+          <input type="range" id="pause" min="0" max="1500" step="50" />
+        </div>
+
+        <h3>Lectura</h3>
+        <div class="field">
+          <label for="font-size">Tamaño de letra <output id="font-size-out"></output></label>
+          <input type="range" id="font-size" min="14" max="34" step="1" />
+        </div>
+        <div class="field">
+          <label for="line-height">Interlineado <output id="line-height-out"></output></label>
+          <input type="range" id="line-height" min="1.3" max="2.3" step="0.05" />
+        </div>
+        <div class="segmented" role="radiogroup" aria-label="Fuente">
+          <label><input type="radio" name="font" value="serif" /> <span class="serif">Serif</span></label>
+          <label><input type="radio" name="font" value="sans" /> <span class="sans">Sans</span></label>
+        </div>
+        <div class="segmented themes" role="radiogroup" aria-label="Tema">
+          <label><input type="radio" name="theme" value="auto" /> <span>Auto</span></label>
+          <label><input type="radio" name="theme" value="light" /> <span>Claro</span></label>
+          <label><input type="radio" name="theme" value="sepia" /> <span>Sepia</span></label>
+          <label><input type="radio" name="theme" value="dark" /> <span>Oscuro</span></label>
+        </div>
+        <label class="check"><input type="checkbox" id="word-hl" /> Resaltar también la palabra</label>
+        <label class="check"><input type="checkbox" id="keep-awake" /> Mantener la pantalla encendida mientras lee</label>
+      </form>
+    </dialog>
+
+    <!-- Velocidad -->
+    <dialog id="speed-sheet" class="sheet small" aria-label="Velocidad">
+      <form method="dialog" class="sheet-inner">
+        <div class="sheet-head">
+          <h2>Velocidad</h2>
+          <button class="icon-btn" value="close" aria-label="Cerrar" data-icon="close"></button>
+        </div>
+        <div class="choice-grid" id="speed-choices"></div>
+      </form>
+    </dialog>
+
+    <!-- Temporizador -->
+    <dialog id="sleep-sheet" class="sheet small" aria-label="Temporizador para dormir">
+      <form method="dialog" class="sheet-inner">
+        <div class="sheet-head">
+          <h2>Dejar de leer en…</h2>
+          <button class="icon-btn" value="close" aria-label="Cerrar" data-icon="close"></button>
+        </div>
+        <div class="choice-grid" id="sleep-choices"></div>
+      </form>
+    </dialog>
+
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
