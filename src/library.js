@@ -229,6 +229,11 @@ function renderList() {
   const visible = sortedBooks(filtered);
   const canDrag = getSettings().librarySort === 'manual' && !q && books.length > 1;
   $('lib-tools').hidden = books.length === 0;
+  if (books.length < 6 && $('lib-search').value) {
+    // The search box hides with few books; don't leave an invisible filter behind.
+    $('lib-search').value = '';
+    return renderList();
+  }
   $('lib-search').hidden = books.length < 6;
   $('empty-state').hidden = books.length > 0;
   renderSortControls(q);
@@ -328,9 +333,11 @@ function setupReorder() {
       drag.moved = true;
       next = li.nextElementSibling;
     }
+    // Always move the neighbours, never the dragged row itself: moving it in
+    // the DOM would make the browser drop the pointer capture mid-drag.
     let prev = li.previousElementSibling;
     while (prev && y < mid(prev)) {
-      list.insertBefore(li, prev);
+      list.insertBefore(prev, li.nextElementSibling);
       drag.moved = true;
       prev = li.previousElementSibling;
     }
@@ -340,12 +347,15 @@ function setupReorder() {
     li.style.transform = `translateY(${y - grabY - natural}px)`;
   };
 
-  list.addEventListener('pointermove', (e) => {
+  window.addEventListener('pointermove', (e) => {
     if (!drag || e.pointerId !== drag.pointerId) return;
     drag.y = e.clientY;
   });
-  list.addEventListener('pointerup', (e) => drag && e.pointerId === drag.pointerId && finish(true));
-  list.addEventListener('pointercancel', (e) => drag && e.pointerId === drag.pointerId && finish(true));
+  // Listen on window too, so releasing outside the list always ends the drag.
+  const end = (e) => drag && e.pointerId === drag.pointerId && finish(true);
+  window.addEventListener('pointerup', end);
+  window.addEventListener('pointercancel', end);
+  list.addEventListener('lostpointercapture', end);
 
   // Keyboard: arrows move the focused handle's book.
   list.addEventListener('keydown', async (e) => {
