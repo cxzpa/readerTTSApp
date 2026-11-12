@@ -2,6 +2,7 @@
 import { getSettings } from './settings.js';
 import { SystemEngine, getSystemVoices, rankVoices, systemTtsAvailable } from './tts/system.js';
 import { NeuralEngine, neuralTtsAvailable } from './tts/neural.js';
+import { keepAlive } from './keepalive.js';
 
 export const systemEngine = new SystemEngine();
 export const neuralEngine = new NeuralEngine();
@@ -31,6 +32,7 @@ export function engineLabel() {
 
 /** Must run synchronously in a tap so mobile browsers allow audio that starts later. */
 export function unlockAudio() {
+  keepAlive.unlock();
   if (engineLabel() === 'neural') neuralEngine.unlock();
   else if (systemTtsAvailable()) systemEngine.unlock();
 }

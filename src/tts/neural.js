@@ -99,6 +99,15 @@ export class NeuralEngine {
     this.busy = false;
     this.current = null;
     this.paused = false;
+    this.onExternalPause = null;
+    // The system can pause the element itself (a call, another app's audio).
+    this.audio.addEventListener('pause', () => {
+      const entry = this.current;
+      if (entry?.loaded && !this.paused && !this.audio.ended) {
+        this.paused = true;
+        this.onExternalPause?.();
+      }
+    });
   }
 
   configure({ voiceId, rate }) {

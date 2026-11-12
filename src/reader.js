@@ -6,6 +6,7 @@ import { getSettings, setSettings, onSettingsChange } from './settings.js';
 import { Player } from './player.js';
 import { engineFor, engineLabel, unlockAudio } from './voice.js';
 import { onNeuralProgress } from './tts/neural.js';
+import { keepAlive } from './keepalive.js';
 import { openSettings } from './settings-ui.js';
 import { escapeHtml, formatDuration, setIcon, toast, icon } from './ui.js';
 
@@ -16,7 +17,7 @@ const playBtn = $('play-btn');
 const seek = $('r-seek');
 
 const player = new Player();
-window.__lector = { player }; // handy for debugging and automated tests
+window.__lector = { player, keepAlive }; // handy for debugging and automated tests
 let book = null;
 let chunks = [];
 let charsAfter = []; // characters remaining from each chunk to the end
@@ -178,7 +179,15 @@ export async function openBook(id, { autoplay = false } = {}) {
   await updateBook(id, { lastOpenedAt: Date.now(), totalChunks: total });
   if (req !== openRequest) return 'cancelled';
   if ('mediaSession' in navigator) {
-    navigator.mediaSession.metadata = new MediaMetadata({ title: book.title, artist: 'Lector', album: 'Biblioteca' });
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: book.title,
+      artist: 'Lector',
+      album: 'Biblioteca',
+      artwork: [
+        { src: new URL('icon-192.png', document.baseURI).href, sizes: '192x192', type: 'image/png' },
+        { src: new URL('icon-512.png', document.baseURI).href, sizes: '512x512', type: 'image/png' },
+      ],
+    });
   }
   if (autoplay) player.play();
   return true;
@@ -201,6 +210,10 @@ export function closeBook() {
   activeIndex = -1;
   textEl.innerHTML = '';
   document.title = 'Lector TTS';
+  if ('mediaSession' in navigator) {
+    navigator.mediaSession.metadata = null;
+    navigator.mediaSession.playbackState = 'none';
+  }
 }
 
 export function currentBookLang() {
@@ -247,6 +260,7 @@ function onIndex(i) {
   $('r-percent').textContent = `${percent(i)}%`;
   $('r-remaining').textContent = remainingText(i);
   savePosition(false);
+  updatePositionState(false);
   updateStatus();
 }
 
@@ -310,10 +324,15 @@ function updateFollowButton() {
 }
 
 function onState(playing) {
+  // Keep the page "playing" for the browser while the book is, so it keeps
+  // running in the background and shows the media notification.
+  if (playing) keepAlive.start();
+  else keepAlive.stop();
   setIcon(playBtn, playing ? 'pause' : 'play');
   playBtn.setAttribute('aria-label', playing ? 'Pausar' : 'Leer');
   if (!playing) playBtn.classList.remove('loading');
   if ('mediaSession' in navigator) navigator.mediaSession.playbackState = playing ? 'playing' : 'paused';
+  updatePositionState(true);
   updateWakeLock();
   updateStatus();
   if (!playing) savePosition(true);
@@ -334,16 +353,23 @@ function updateStatus() {
   $('r-status').textContent = `${state} · ${voice} · ${s.rate.toFixed(2).replace(/\.?0+$/, '')}×`;
 }
 
+let lastSave = 0;
 function savePosition(now) {
   if (!book) return;
-  clearTimeout(saveTimer);
   const id = book.id;
-  const position = player.index;
-  const progress = chunks.length > 1 ? (charsAfter[0] - charsAfter[position]) / charsAfter[0] : 0;
-  const finished = player.ended;
-  const write = () => updateBook(id, { position, progress: finished ? 1 : progress, lastOpenedAt: Date.now() });
-  if (now) write();
-  else saveTimer = setTimeout(write, 1500);
+  const write = () => {
+    clearTimeout(saveTimer);
+    saveTimer = 0;
+    lastSave = Date.now();
+    if (!book || book.id !== id) return;
+    const position = player.index;
+    const progress = chunks.length > 1 ? (charsAfter[0] - charsAfter[position]) / charsAfter[0] : 0;
+    updateBook(id, { position, progress: player.ended ? 1 : progress, lastOpenedAt: Date.now() });
+  };
+  // In the background timers may not fire for a long time, so write right away there;
+  // otherwise at most every few seconds while reading.
+  if (now || document.hidden || Date.now() - lastSave > 5000) write();
+  else if (!saveTimer) saveTimer = setTimeout(write, 1500);
 }
 
 // ---- Speed & sleep timer ----
@@ -441,4 +467,41 @@ function setupMediaSession() {
   set('nexttrack', () => player.skip(1));
   set('seekbackward', () => player.skip(-3));
   set('seekforward', () => player.skip(3));
+  set('stop', () => player.pause());
+  // Dragging the bar in the notification jumps through the book.
+  set('seekto', (d) => {
+    if (!chunks.length || d.seekTime == null) return;
+    // First chunk whose end lies past the requested time.
+    const chars = d.seekTime * charsPerSecond();
+    let i = chunks.length - 1;
+    for (let j = 0; j < chunks.length; j++) {
+      if (charsAfter[0] - charsAfter[j + 1] > chars) {
+        i = j;
+        break;
+      }
+    }
+    follow = true;
+    player.seek(i);
+  });
+  keepAlive.onExternalPause = () => player.pause();
+}
+
+function charsPerSecond() {
+  return 15 * (getSettings().rate || 1);
+}
+
+/** The notification's progress bar shows the whole book, not one sentence. */
+let lastPositionUpdate = 0;
+function updatePositionState(force) {
+  if (!('mediaSession' in navigator) || !navigator.mediaSession.setPositionState || !book || !chunks.length) return;
+  if (!force && Date.now() - lastPositionUpdate < 3000) return;
+  lastPositionUpdate = Date.now();
+  const cps = charsPerSecond();
+  const duration = Math.max(1, charsAfter[0] / cps);
+  const position = Math.min(duration, (charsAfter[0] - charsAfter[player.index]) / cps);
+  try {
+    navigator.mediaSession.setPositionState({ duration, position, playbackRate: 1 });
+  } catch {
+    /* invalid state on some browsers: ignore */
+  }
 }

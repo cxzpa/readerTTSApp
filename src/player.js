@@ -31,6 +31,7 @@ export class Player extends EventTarget {
     const wasPlaying = this.playing;
     if (this.engine && this.engine !== engine) this.engine.stop();
     this.engine = engine;
+    engine.onExternalPause = () => this.pause();
     if (wasPlaying) this.#restart();
   }
 
@@ -149,7 +150,13 @@ export class Player extends EventTarget {
         return;
       }
       this.index = next;
-      if (this.chunks[next].p !== chunk.p && this.paragraphPause > 0) {
+      // Timers can be clamped for minutes while the page is in the background,
+      // so check the sleep timer here too and skip the paragraph pause there.
+      if (this.sleepAt && Date.now() >= this.sleepAt) {
+        this.#sleep();
+        return;
+      }
+      if (this.chunks[next].p !== chunk.p && this.paragraphPause > 0 && !document.hidden) {
         await wait(this.paragraphPause / (this.engine.rate || 1));
         if (token !== this.token || !this.playing) return;
       }
@@ -167,6 +174,9 @@ export class Player extends EventTarget {
   }
 
   async #sleep() {
+    if (this.sleeping) return;
+    this.sleeping = true;
+    clearTimeout(this.sleepTimer);
     const engine = this.engine;
     if (engine?.setVolume && this.playing) {
       for (let v = 1; v >= 0; v -= 0.1) {
@@ -177,6 +187,7 @@ export class Player extends EventTarget {
     this.pause();
     engine?.setVolume?.(1);
     this.sleepAt = 0;
+    this.sleeping = false;
     this.emit('sleep', { at: 0, fired: true });
   }
 }
