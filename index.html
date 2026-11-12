@@ -52,9 +52,14 @@
             <button class="icon-btn small" id="lib-dir" type="button"></button>
           </div>
         </div>
+        <div class="segmented lib-tabs" id="lib-tabs" role="tablist" aria-label="Estantes" hidden>
+          <label><input type="radio" name="lib-tab" value="unread" /> <span>Por leer <b id="count-unread"></b></span></label>
+          <label><input type="radio" name="lib-tab" value="read" /> <span>Leídos <b id="count-read"></b></span></label>
+        </div>
         <input type="search" id="lib-search" class="lib-search" placeholder="Buscar libro" aria-label="Buscar libro" hidden />
         <p class="manual-hint" id="manual-hint" hidden>Arrastra desde <span class="inline-icon" data-icon="grip"></span> para cambiar el orden.</p>
         <ul id="book-list" class="book-list"></ul>
+        <p id="tab-empty" class="empty-state" hidden></p>
         <div id="empty-state" class="empty-state" hidden>
           <p>Todavía no hay libros.</p>
           <p>Abre uno o varios archivos <strong>.txt</strong> y empieza a escuchar.</p>

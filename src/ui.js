@@ -15,6 +15,7 @@ const PATHS = {
   target: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2"/>',
   trash: '<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/>',
   download: '<path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/>',
+  check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
   grip: '<circle cx="9" cy="6" r="1.2"/><circle cx="15" cy="6" r="1.2"/><circle cx="9" cy="12" r="1.2"/><circle cx="15" cy="12" r="1.2"/><circle cx="9" cy="18" r="1.2"/><circle cx="15" cy="18" r="1.2"/>',
   arrowDown: '<path d="M12 5v14"/><path d="M6 13l6 6 6-6"/>',
   arrowUp: '<path d="M12 19V5"/><path d="M6 11l6-6 6 6"/>',
@@ -40,9 +41,21 @@ export function setIcon(el, name) {
 }
 
 let toastTimer;
-export function toast(message, ms = 3200) {
+/** Show a short message; `action` ({ label, run }) adds a button such as "Deshacer". */
+export function toast(message, ms = 3200, action = null) {
   const el = document.getElementById('toast');
   el.textContent = message;
+  if (action) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'toast-action';
+    btn.textContent = action.label;
+    btn.addEventListener('click', () => {
+      el.hidden = true;
+      action.run();
+    });
+    el.append(btn);
+  }
   el.hidden = false;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => (el.hidden = true), ms);

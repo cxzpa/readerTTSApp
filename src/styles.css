@@ -295,6 +295,97 @@ svg.i {
   fill: currentColor;
 }
 
+.lib-tabs {
+  margin: 4px 0 10px;
+}
+
+.lib-tabs b {
+  font-weight: 600;
+  opacity: 0.6;
+}
+
+.read-box {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin-right: -4px;
+  border: 0;
+  background: transparent;
+  color: var(--accent-ink);
+}
+
+.read-box .box {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 2px solid var(--muted);
+  border-radius: 7px;
+  background: var(--surface);
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.read-box .box svg.i {
+  width: 18px;
+  height: 18px;
+  stroke-width: 3;
+  opacity: 0;
+}
+
+.read-box[aria-checked='true'] .box {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.read-box[aria-checked='true'] .box svg.i {
+  opacity: 1;
+}
+
+.read-box:focus-visible .box {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.book .icon-btn.danger {
+  width: 40px;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: max-content;
+}
+
+@media (max-width: 400px) {
+  .book {
+    gap: 10px;
+  }
+
+  .book-cover {
+    width: 38px;
+    height: 52px;
+    font-size: 1.1rem;
+  }
+}
+
+.toast-action {
+  flex: none;
+  padding: 4px 6px;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+:root:not([data-theme='dark']) .toast-action {
+  color: #f0b48a;
+}
+
 .manual-hint {
   margin: 0 0 6px;
   color: var(--muted);

@@ -1,5 +1,5 @@
 // Home screen: the saved books, "continue reading" and adding new .txt files.
-import { listBooks, addBook, deleteBook, hashText, getText, requestPersistence, setBookOrder } from './db.js';
+import { listBooks, addBook, deleteBook, hashText, getText, requestPersistence, setBookOrder, updateBook } from './db.js';
 import { decodeText, detectLang, parseBook, titleFromFileName } from './text.js';
 import { getSettings, setSettings } from './settings.js';
 import { unlockAudio } from './voice.js';
@@ -25,8 +25,20 @@ export function initLibrary({ open }) {
     renderList();
   });
 
+  $('lib-tabs').addEventListener('change', (e) => {
+    if (e.target.name !== 'lib-tab') return;
+    $('lib-search').value = '';
+    setSettings({ libraryTab: e.target.value });
+    renderList();
+  });
   $('book-list').addEventListener('click', async (e) => {
     if (e.target.closest('[data-drag]') || Date.now() < suppressClickUntil) return;
+    const box = e.target.closest('[data-read]');
+    if (box) {
+      e.stopPropagation();
+      toggleRead(box.dataset.read);
+      return;
+    }
     const del = e.target.closest('[data-delete]');
     if (del) {
       e.stopPropagation();
@@ -123,6 +135,8 @@ async function importAll(txt, skipped) {
       toast(`No se pudo abrir "${file.name}"`);
     }
   }
+  // New books land in "Por leer": show that shelf so they aren't hidden behind "Leídos".
+  if (added) setSettings({ libraryTab: 'unread' });
   await refreshLibrary();
   const parts = [];
   if (txt.length > 1) parts.push(added === 1 ? '1 libro agregado' : `${added} libros agregados`);
@@ -143,7 +157,7 @@ function bookStatus(b) {
 
 async function renderContinue() {
   const card = $('continue-card');
-  const last = books.find((b) => b.lastOpenedAt && b.progress < 0.999);
+  const last = books.find((b) => b.lastOpenedAt && b.progress < 0.999 && !b.read);
   if (!last) {
     card.hidden = true;
     return;
@@ -232,22 +246,61 @@ function renderSortControls(q) {
     dir.setAttribute('aria-label', `Invertir orden (ahora: ${label})`);
     dir.title = label;
   }
-  $('manual-hint').hidden = !(sort === 'manual' && !q && books.length > 1);
+  $('manual-hint').hidden = !(sort === 'manual' && !q && shelf().length > 1);
+}
+
+// ---- Shelves: "Por leer" / "Leídos" ----
+
+const currentTab = () => (getSettings().libraryTab === 'read' ? 'read' : 'unread');
+/** Books on the shelf being shown (rows without `read` count as unread). */
+const shelf = () => books.filter((b) => !!b.read === (currentTab() === 'read'));
+
+function renderTabs() {
+  const read = books.filter((b) => b.read).length;
+  $('lib-tabs').hidden = books.length === 0;
+  $('count-unread').textContent = books.length - read;
+  $('count-read').textContent = read;
+  $('lib-tabs').querySelectorAll('input').forEach((r) => (r.checked = r.value === currentTab()));
+}
+
+/** Move a book between "Por leer" and "Leídos" (its reading position is kept). */
+async function toggleRead(id, { undoable = true } = {}) {
+  const book = books.find((b) => b.id === id);
+  if (!book) return;
+  const read = !book.read;
+  const previousOrder = book.order;
+  // Clearing `order` puts it on top of the other shelf in "Mi orden", like a new book.
+  await updateBook(id, { read, readAt: read ? Date.now() : null, order: undefined });
+  await refreshLibrary();
+  const msg = read ? `"${book.title}" pasó a Leídos` : `"${book.title}" volvió a Por leer`;
+  const undo = async () => {
+    await updateBook(id, { read: !read, readAt: book.readAt ?? null, order: previousOrder });
+    await refreshLibrary();
+  };
+  toast(msg, 5000, undoable ? { label: 'Deshacer', run: undo } : null);
 }
 
 function renderList() {
   const q = $('lib-search').value.trim().toLowerCase();
-  const filtered = q ? books.filter((b) => b.title.toLowerCase().includes(q)) : books;
+  const onShelf = shelf();
+  const filtered = q ? onShelf.filter((b) => b.title.toLowerCase().includes(q)) : onShelf;
   const visible = sortedBooks(filtered);
-  const canDrag = getSettings().librarySort === 'manual' && !q && books.length > 1;
+  const canDrag = getSettings().librarySort === 'manual' && !q && onShelf.length > 1;
   $('lib-tools').hidden = books.length === 0;
-  if (books.length < 6 && $('lib-search').value) {
+  renderTabs();
+  if (onShelf.length < 6 && $('lib-search').value) {
     // The search box hides with few books; don't leave an invisible filter behind.
     $('lib-search').value = '';
     return renderList();
   }
-  $('lib-search').hidden = books.length < 6;
+  $('lib-search').hidden = onShelf.length < 6;
   $('empty-state').hidden = books.length > 0;
+  const tabEmpty = $('tab-empty');
+  tabEmpty.hidden = !(books.length > 0 && onShelf.length === 0);
+  tabEmpty.textContent =
+    currentTab() === 'read'
+      ? 'Todavía no hay libros leídos. Toca la casilla de un libro para marcarlo como leído.'
+      : 'No tienes libros pendientes. ¡Todos están en Leídos!';
   renderSortControls(q);
   $('book-list').innerHTML = visible
     .map(
@@ -260,6 +313,8 @@ function renderList() {
         <p>${bookStatus(b)}${b.lastOpenedAt ? ` · ${relativeDate(b.lastOpenedAt)}` : ''}</p>
         <div class="progress"><span style="width:${(b.progress * 100).toFixed(1)}%"></span></div>
       </div>
+      <button type="button" class="read-box" data-read="${b.id}" role="checkbox" aria-checked="${b.read ? 'true' : 'false'}"
+        aria-label="${b.read ? 'Leído' : 'Marcar como leído'}: ${escapeHtml(b.title)}" title="${b.read ? 'Marcar como no leído' : 'Marcar como leído'}"><span class="box">${icon('check')}</span></button>
       <button class="icon-btn danger" data-delete="${b.id}" aria-label="Quitar ${escapeHtml(b.title)}">${icon('trash')}</button>
     </li>`,
     )

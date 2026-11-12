@@ -5,6 +5,7 @@ Lector de libros `.txt` en voz alta, pensado para escuchar libros largos con com
 ## Qué hace
 
 - **Biblioteca de inicio:** guarda los libros que abres para entrar rápido después, con progreso, tiempo restante y una tarjeta de "Continuar escuchando".
+- **Leídos:** cada libro tiene una casilla; un toque lo marca como leído y lo pasa a la pestaña "Leídos" (con "Deshacer"). Otro toque lo devuelve a "Por leer". Tu posición en el libro se conserva.
 - **Ordenar la biblioteca:** por recientes, fecha de carga, nombre o longitud (con flecha para invertir), o en tu propio orden arrastrando cada libro desde su manija.
 - **Varios archivos a la vez:** eliges uno o varios `.txt`; se guardan todos y el primero se abre directo en el lector. En la computadora también puedes arrastrarlos a la ventana.
 - **Lector en vivo:** resalta la oración que se está leyendo, y la palabra si lo activas. La vista sigue la lectura sola; si te desplazas a mano, aparece un botón para volver.

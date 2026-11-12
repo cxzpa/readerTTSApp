@@ -17,6 +17,7 @@ export const DEFAULTS = {
   wordHighlight: true,
   librarySort: 'recent', // 'recent' | 'manual' | 'added' | 'name' | 'length'
   librarySortDesc: true,
+  libraryTab: 'unread', // 'unread' | 'read'
 };
 
 let current = load();
