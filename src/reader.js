@@ -171,8 +171,7 @@ export async function openBook(id, { autoplay = false } = {}) {
 
   const s = getSettings();
   player.paragraphPause = s.paragraphPause;
-  player.load(chunks, Math.min(book.position || 0, chunks.length - 1));
-  if (book.progress >= 0.999) player.ended = true; // pressing play starts over
+  player.load(chunks, Math.min(book.position || 0, chunks.length - 1), { ended: book.progress >= 0.999 });
   await applyEngine();
   if (req !== openRequest) return 'cancelled';
   follow = true;

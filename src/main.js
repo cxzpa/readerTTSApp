@@ -84,7 +84,8 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
       !document.querySelector('dialog[open]');
     if (quiet) reload();
   };
-  window.addEventListener('lector:voice-failed', () => updateReady && !isReading() && reload());
+  // Reading already failed at this point, so reload even from the reader.
+  window.addEventListener('lector:voice-failed', () => updateReady && reload());
   document.querySelectorAll('dialog').forEach((d) => d.addEventListener('close', reloadIfIdle));
   window.addEventListener('hashchange', () => setTimeout(reloadIfIdle, 0));
   navigator.serviceWorker.addEventListener('controllerchange', () => {

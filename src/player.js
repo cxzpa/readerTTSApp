@@ -19,13 +19,13 @@ export class Player extends EventTarget {
     this.dispatchEvent(new CustomEvent(type, { detail }));
   }
 
-  load(chunks, index = 0) {
+  load(chunks, index = 0, { ended = false } = {}) {
     const wasPlaying = this.playing;
     this.token++;
     this.playing = false;
     this.engine?.stop();
     this.chunks = chunks;
-    this.ended = false;
+    this.ended = ended; // a finished book: play starts over, and it stays "Terminado"
     this.index = clamp(index, 0, Math.max(0, chunks.length - 1));
     // Only announce "paused" if something was playing, and only after the new
     // index is set: a listener saving the position must never save index 0
