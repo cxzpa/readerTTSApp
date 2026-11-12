@@ -116,9 +116,12 @@ function splitLong(sentence) {
     if (at > 40 && sentence.length - at > 40 && (cut < 0 || Math.abs(at - mid) < Math.abs(cut - mid))) cut = at;
   }
   if (cut < 0) {
-    const space = sentence.lastIndexOf(' ', MAX_CHUNK);
+    // Never pick a trailing space: cutting after it would leave the text unchanged.
+    const space = sentence.lastIndexOf(' ', Math.min(MAX_CHUNK, sentence.length - 2));
     cut = space >= 40 ? space + 1 : MAX_CHUNK;
   }
+  // Safety net: both parts must be non-empty, or this would recurse forever.
+  if (cut <= 0 || cut >= sentence.length) cut = Math.min(MAX_CHUNK, sentence.length - 1);
   return [...splitLong(sentence.slice(0, cut)), ...splitLong(sentence.slice(cut))];
 }
 
