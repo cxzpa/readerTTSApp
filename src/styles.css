@@ -252,12 +252,96 @@ svg.i {
   font-weight: 600;
 }
 
-.lib-tools input {
-  width: min(220px, 50%);
-  padding: 8px 12px;
+.sort-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.sort-controls select {
+  max-width: 11em;
+  padding: 7px 10px;
   border-radius: 10px;
   border: 1px solid var(--line);
   background: var(--surface);
+  font-size: 0.92rem;
+}
+
+.icon-btn.small {
+  width: 38px;
+  height: 38px;
+}
+
+.icon-btn.small svg.i {
+  width: 19px;
+  height: 19px;
+}
+
+.lib-search {
+  display: block;
+  width: 100%;
+  margin: 2px 0 8px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.manual-hint {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.drag-handle {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 52px;
+  margin-left: -8px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.drag-handle svg.i {
+  fill: currentColor;
+}
+
+.drag-handle:focus-visible {
+  outline: 2px solid var(--accent);
+}
+
+.book.dragging {
+  position: relative;
+  z-index: 10;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  cursor: grabbing;
+}
+
+.book-list.is-dragging .book {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.book-list.is-dragging .book:not(.dragging) {
+  transition: transform 0.15s ease;
 }
 
 .book-list {

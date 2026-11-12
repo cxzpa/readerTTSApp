@@ -77,6 +77,20 @@ export async function updateBook(id, patch) {
   return book;
 }
 
+/** Save a manual order for the library in one transaction (other fields untouched). */
+export async function setBookOrder(ids) {
+  const db = await open();
+  const tx = db.transaction('books', 'readwrite');
+  const store = tx.objectStore('books');
+  ids.forEach((id, order) => {
+    const req = store.get(id);
+    req.onsuccess = () => {
+      if (req.result) store.put({ ...req.result, order });
+    };
+  });
+  await done(tx);
+}
+
 export async function deleteBook(id) {
   const db = await open();
   const tx = db.transaction(['books', 'texts'], 'readwrite');

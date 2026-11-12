@@ -15,6 +15,8 @@ export const DEFAULTS = {
   theme: 'auto', // 'auto' | 'light' | 'sepia' | 'dark'
   keepAwake: false,
   wordHighlight: true,
+  librarySort: 'recent', // 'recent' | 'manual' | 'added' | 'name' | 'length'
+  librarySortDesc: true,
 };
 
 let current = load();
