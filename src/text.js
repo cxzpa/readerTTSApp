@@ -103,26 +103,71 @@ function splitSentences(paragraph, lang) {
 /**
  * Split a very long sentence so TTS engines handle it well: at a comma or
  * semicolon near the middle, else at a space, else (no spaces at all) every
- * MAX_CHUNK characters. Each cut is strictly inside the text, so it always ends.
+ * MAX_CHUNK characters.
+ *
+ * Works on index ranges with an explicit stack (no recursion, so a huge
+ * paragraph can't overflow the call stack), and finds punctuation cuts with
+ * a binary search over positions found once, so it stays fast on very long
+ * text. It produces the same pieces as the original recursive version.
  */
 function splitLong(sentence) {
-  if (sentence.length <= MAX_CHUNK) return [sentence];
-  const mid = sentence.length / 2;
-  let cut = -1;
+  const len = sentence.length;
+  if (len <= MAX_CHUNK) return [sentence];
+
+  // Every possible punctuation cut, as the index right after "<punct><space>".
+  const cuts = [];
   const re = /[;:,—)]\s/g;
   let m;
-  while ((m = re.exec(sentence))) {
-    const at = m.index + 2; // after the punctuation and its space
-    if (at > 40 && sentence.length - at > 40 && (cut < 0 || Math.abs(at - mid) < Math.abs(cut - mid))) cut = at;
+  while ((m = re.exec(sentence))) cuts.push(m.index + 2);
+
+  const out = [];
+  const stack = [[0, len]];
+  while (stack.length) {
+    const [start, end] = stack.pop();
+    const size = end - start;
+    if (size <= MAX_CHUNK) {
+      out.push(sentence.slice(start, end));
+      continue;
+    }
+    let cut = punctuationCut(cuts, start, end);
+    if (cut < 0) {
+      // Never pick a trailing space: cutting after it would leave the text unchanged.
+      // Last space within the allowed window (searching only that window keeps it fast).
+      let space = start + Math.min(MAX_CHUNK, size - 2);
+      while (space >= start + 40 && sentence.charCodeAt(space) !== 32) space--;
+      cut = space >= start + 40 ? space + 1 : start + MAX_CHUNK;
+      // Don't cut an emoji (or other surrogate pair) in half.
+      if (cut === start + MAX_CHUNK && isLowSurrogate(sentence.charCodeAt(cut))) cut--;
+    }
+    // Safety net: both parts must be non-empty.
+    if (cut <= start || cut >= end) cut = start + Math.min(MAX_CHUNK, size - 1);
+    stack.push([cut, end], [start, cut]); // left part is processed first
   }
-  if (cut < 0) {
-    // Never pick a trailing space: cutting after it would leave the text unchanged.
-    const space = sentence.lastIndexOf(' ', Math.min(MAX_CHUNK, sentence.length - 2));
-    cut = space >= 40 ? space + 1 : MAX_CHUNK;
+  return out;
+}
+
+/** The punctuation cut closest to the middle, at least 40 chars from each end (-1 if none). */
+function punctuationCut(cuts, start, end) {
+  const lo = start + 40; // exclusive bounds
+  const hi = end - 40;
+  const mid = start + (end - start) / 2;
+  // First cut position greater than mid.
+  let a = 0;
+  let b = cuts.length;
+  while (a < b) {
+    const c = (a + b) >> 1;
+    if (cuts[c] <= mid) a = c + 1;
+    else b = c;
   }
-  // Safety net: both parts must be non-empty, or this would recurse forever.
-  if (cut <= 0 || cut >= sentence.length) cut = Math.min(MAX_CHUNK, sentence.length - 1);
-  return [...splitLong(sentence.slice(0, cut)), ...splitLong(sentence.slice(cut))];
+  const left = a - 1 >= 0 && cuts[a - 1] > lo && cuts[a - 1] < hi ? cuts[a - 1] : -1;
+  const right = a < cuts.length && cuts[a] > lo && cuts[a] < hi ? cuts[a] : -1;
+  if (left < 0) return right;
+  if (right < 0) return left;
+  return mid - left <= right - mid ? left : right; // ties go to the earlier one, as before
+}
+
+function isLowSurrogate(code) {
+  return code >= 0xdc00 && code <= 0xdfff;
 }
 
 /**
