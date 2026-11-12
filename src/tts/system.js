@@ -84,7 +84,8 @@ export class SystemEngine {
       entry.settle = settle;
       u.onend = () => settle(resolve);
       u.onerror = (e) => {
-        if (e.error === 'interrupted' || e.error === 'canceled') settle(reject, { cancelled: true });
+        // Our own stop() settles first, so reaching here means someone else cancelled the speech.
+        if (e.error === 'interrupted' || e.error === 'canceled') settle(reject, { cancelled: true, external: true });
         else settle(reject, new Error(friendlyError(e.error)));
       };
       u.onboundary = (e) => {
@@ -95,6 +96,15 @@ export class SystemEngine {
       // Some Android engines never fire onstart/onend for empty-ish text.
       if (!text.trim()) settle(resolve);
     });
+  }
+
+  /** Call inside a tap: iOS only allows speech that a user gesture started first. */
+  unlock() {
+    if (this.unlocked || !synth) return;
+    this.unlocked = true;
+    const u = new SpeechSynthesisUtterance(' ');
+    u.volume = 0;
+    synth.speak(u);
   }
 
   stop() {

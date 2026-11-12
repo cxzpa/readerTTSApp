@@ -1,5 +1,38 @@
 // Runs the Piper neural voice off the main thread so reading stays smooth.
-import { TtsSession, stored, remove } from '@mintplex-labs/piper-tts-web';
+import { TtsSession, stored, remove, PATH_MAP, HF_BASE } from '@mintplex-labs/piper-tts-web';
+
+// The library saves models in OPFS, but some browsers (older Safari) can't
+// write files there and it fails silently. In that case keep the downloaded
+// models in Cache Storage instead, so they still work offline.
+const MODEL_CACHE = 'lector-models';
+const opfsWritable = typeof FileSystemFileHandle !== 'undefined' && 'createWritable' in FileSystemFileHandle.prototype;
+if (!opfsWritable && typeof caches !== 'undefined') {
+  const realFetch = self.fetch.bind(self);
+  self.fetch = async (input, init) => {
+    const url = typeof input === 'string' ? input : input.url;
+    if (!url.startsWith(HF_BASE)) return realFetch(input, init);
+    const cache = await caches.open(MODEL_CACHE);
+    const hit = await cache.match(url);
+    if (hit) return hit;
+    const res = await realFetch(input, init);
+    if (res.ok) cache.put(url, res.clone()).catch(() => {});
+    return res;
+  };
+}
+
+async function storedVoices() {
+  if (opfsWritable) return stored();
+  if (typeof caches === 'undefined') return [];
+  const keys = new Set((await (await caches.open(MODEL_CACHE)).keys()).map((r) => r.url));
+  return Object.keys(PATH_MAP).filter((id) => keys.has(`${HF_BASE}/${PATH_MAP[id]}`));
+}
+
+async function removeVoice(voiceId) {
+  if (opfsWritable) return remove(voiceId);
+  const cache = await caches.open(MODEL_CACHE);
+  const path = `${HF_BASE}/${PATH_MAP[voiceId]}`;
+  await Promise.all([cache.delete(path), cache.delete(`${path}.json`)]);
+}
 
 let session = null;
 let sessionVoice = null;
@@ -51,9 +84,9 @@ async function handle(msg) {
       const blob = await session.predict(msg.text);
       self.postMessage({ type: 'audio', id: msg.id, blob });
     } else if (msg.type === 'stored') {
-      self.postMessage({ type: 'stored', id: msg.id, voices: await stored() });
+      self.postMessage({ type: 'stored', id: msg.id, voices: await storedVoices() });
     } else if (msg.type === 'remove') {
-      await remove(msg.voiceId);
+      await removeVoice(msg.voiceId);
       if (sessionVoice === msg.voiceId) {
         TtsSession._instance = null;
         session = null;

@@ -104,6 +104,7 @@ export class NeuralEngine {
   configure({ voiceId, rate }) {
     if (voiceId && voiceId !== this.voiceId) {
       this.voiceId = voiceId;
+      this.queue.forEach((job) => job.reject({ cancelled: true }));
       this.cache.clear();
       this.queue = [];
     }
@@ -113,14 +114,24 @@ export class NeuralEngine {
     }
   }
 
-  /** Make sure the given texts are generated (first = most urgent). Drops stale work. */
+  /**
+   * Make sure the given texts are generated (first = most urgent).
+   * Anything outside this window is dropped: queued jobs are cancelled and
+   * their cache entries removed, so a later request always starts fresh.
+   */
   prefetch(texts) {
     const keep = new Set(texts);
-    for (const key of this.cache.keys()) {
-      if (!keep.has(key) && this.cache.size > texts.length + 2) this.cache.delete(key);
-    }
+    const dropped = this.queue.filter((q) => !keep.has(q.text));
     this.queue = this.queue.filter((q) => keep.has(q.text));
+    dropped.forEach((job) => {
+      if (this.cache.get(job.text) === job.promise) this.cache.delete(job.text);
+      job.reject({ cancelled: true });
+    });
+    for (const key of [...this.cache.keys()]) if (!keep.has(key)) this.cache.delete(key);
     texts.forEach((t) => this.#get(t));
+    // Keep the queue in the requested order (current chunk first).
+    const order = new Map(texts.map((t, i) => [t, i]));
+    this.queue.sort((a, b) => order.get(a.text) - order.get(b.text));
   }
 
   #get(text) {
@@ -131,9 +142,16 @@ export class NeuralEngine {
       resolve = res;
       reject = rej;
     });
-    promise.catch(() => this.cache.delete(text));
+    promise.done = false;
+    promise.then(
+      () => (promise.done = true),
+      () => {
+        promise.done = true;
+        if (this.cache.get(text) === promise) this.cache.delete(text);
+      },
+    );
     this.cache.set(text, promise);
-    this.queue.push({ text, resolve, reject, voiceId: this.voiceId });
+    this.queue.push({ text, resolve, reject, promise, voiceId: this.voiceId });
     this.#pump();
     return promise;
   }
@@ -168,16 +186,15 @@ export class NeuralEngine {
       entry.settle = settle;
       this.current = entry;
 
+      const job = this.#get(text);
       // Move this chunk to the front of the queue if it hasn't started yet.
       const idx = this.queue.findIndex((q) => q.text === text);
       if (idx > 0) this.queue.unshift(...this.queue.splice(idx, 1));
 
-      const ready = this.cache.has(text);
-      if (!ready) onLoading?.(true);
-      this.#get(text).then(
+      if (!job.done) onLoading?.(true);
+      job.then(
         (blob) => {
           if (entry.settled) return;
-          onLoading?.(false);
           const a = this.audio;
           if (entry.url) URL.revokeObjectURL(entry.url);
           entry.url = URL.createObjectURL(blob);
@@ -191,7 +208,8 @@ export class NeuralEngine {
           };
           a.onerror = () => settle(reject, new Error('No se pudo reproducir el audio'));
           entry.loaded = true;
-          if (!this.paused) a.play().catch((err) => settle(reject, err));
+          onLoading?.(false);
+          if (!this.paused) a.play().catch((err) => settle(reject, playError(err)));
           if (onWord) {
             const words = wordStarts(text);
             let last = -1;
@@ -213,7 +231,7 @@ export class NeuralEngine {
         },
         (err) => {
           onLoading?.(false);
-          settle(reject, err);
+          settle(reject, err?.cancelled ? err : new Error(`No se pudo generar la voz: ${err?.message || err}`));
         },
       );
     });
@@ -227,7 +245,7 @@ export class NeuralEngine {
   resume() {
     this.paused = false;
     const entry = this.current;
-    if (entry?.loaded) this.audio.play().catch((err) => entry.settle(entry.reject, err));
+    if (entry?.loaded) this.audio.play().catch((err) => entry.settle(entry.reject, playError(err)));
     // If the audio is still being generated, it starts playing as soon as it's ready.
   }
 
@@ -249,6 +267,32 @@ export class NeuralEngine {
   setVolume(v) {
     this.audio.volume = v;
   }
+
+  /**
+   * Call synchronously inside a tap: iOS only lets an audio element play
+   * later (after the voice is generated) if it was started by a user gesture.
+   */
+  unlock() {
+    if (this.unlocked || this.current) return;
+    this.unlocked = true;
+    const a = this.audio;
+    a.src = SILENT_WAV;
+    a.play().then(
+      () => {
+        if (!this.current) a.pause();
+      },
+      () => (this.unlocked = false),
+    );
+  }
+}
+
+// 0.05 s of silence, used to unlock audio playback on iOS.
+const SILENT_WAV =
+  'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
+
+function playError(err) {
+  if (err?.name === 'NotAllowedError') return new Error('El navegador bloqueó el audio. Toca el botón de reproducir.');
+  return err instanceof Error ? err : new Error(String(err));
 }
 
 function wordStarts(text) {

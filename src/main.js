@@ -34,7 +34,7 @@ async function route() {
     $('library').hidden = true;
     $('reader').hidden = false;
     const ok = await openBook(m[1], { autoplay });
-    if (!ok) go('#/');
+    if (ok === false) go('#/');
   } else {
     closeBook();
     $('reader').hidden = true;

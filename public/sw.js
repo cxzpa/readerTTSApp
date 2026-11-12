@@ -1,18 +1,29 @@
-// Offline support: the app shell and its files are cached the first time
-// they are used. Pages are fetched fresh when online and served from the
-// cache when offline. Neural voice models are stored separately by the app.
-const CACHE = 'lector-v1';
-const SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg', './icon-192.png', './icon-512.png'];
+// Offline support. The build fills in PRECACHE (every app file) and VERSION
+// (a hash of their contents), so the first visit caches the whole app and
+// each update replaces the old cache. Neural voice runtime files are cached
+// the first time they are used; voice models are stored by the app itself.
+const VERSION = '__VERSION__';
+const PRECACHE = /*__PRECACHE__*/ [];
+const CACHE = `lector-${VERSION}`;
+// Neural voice runtime (~50 MB) lives in its own cache so app updates don't
+// throw it away; it is replaced only when those files change.
+const VENDOR_VERSION = '__VENDOR_VERSION__';
+const VENDOR_CACHE = `lector-vendor-${VENDOR_VERSION}`;
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  event.waitUntil(
+    caches
+      .open(CACHE)
+      .then((c) => c.addAll(PRECACHE))
+      .then(() => self.skipWaiting()),
+  );
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.filter((k) => k.startsWith('lector-') && k !== CACHE && k !== VENDOR_CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim()),
   );
 });
@@ -23,26 +34,24 @@ self.addEventListener('fetch', (event) => {
   if (req.method !== 'GET' || url.origin !== self.location.origin) return;
 
   if (req.mode === 'navigate') {
+    // Fresh page when online; cached app when offline or if the server errors.
     event.respondWith(
       fetch(req)
-        .then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put('./index.html', copy));
-          return res;
-        })
-        .catch(() => caches.match('./index.html')),
+        .then((res) => (res.ok ? res : caches.match('./index.html', { ignoreVary: true }).then((hit) => hit || res)))
+        .catch(() => caches.match('./index.html', { ignoreVary: true }).then((hit) => hit || caches.match('./'))),
     );
     return;
   }
 
   event.respondWith(
-    caches.match(req).then(
+    caches.match(req, { ignoreSearch: true, ignoreVary: true }).then(
       (hit) =>
         hit ||
         fetch(req).then((res) => {
           if (res.ok && res.type === 'basic') {
             const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put(req, copy));
+            const name = url.pathname.includes('/vendor/') ? VENDOR_CACHE : CACHE;
+            caches.open(name).then((c) => c.put(req, copy));
           }
           return res;
         }),

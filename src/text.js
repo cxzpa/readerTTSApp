@@ -28,6 +28,7 @@ export function detectLang(text) {
 }
 
 const DIALOG_START = /^[—–\-―«"“'‘]/;
+const SENTENCE_END = /[.!?…:;»”"')\]]$/;
 
 /** Split raw text into paragraphs, re-joining lines that were hard-wrapped. */
 export function splitParagraphs(raw) {
@@ -38,10 +39,14 @@ export function splitParagraphs(raw) {
     .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f­﻿]/g, '');
   const lines = text.split('\n').map((l) => l.replace(/\s+/g, ' ').trim());
 
-  // Typical line width: if most lines end near the same length, the file is hard-wrapped.
-  const lengths = lines.filter(Boolean).map((l) => l.length).sort((a, b) => a - b);
+  // A file is hard-wrapped when its lines share a typical width AND most of
+  // them end mid-sentence. Files with one paragraph per line end lines with
+  // punctuation instead, so they are left alone.
+  const nonEmpty = lines.filter(Boolean);
+  const lengths = nonEmpty.map((l) => l.length).sort((a, b) => a - b);
   const wrap = lengths.length ? lengths[Math.floor(lengths.length * 0.9)] : 0;
-  const hardWrapped = wrap > 30 && wrap <= 120;
+  const midSentence = nonEmpty.filter((l) => !SENTENCE_END.test(l)).length / (nonEmpty.length || 1);
+  const hardWrapped = wrap > 30 && wrap <= 150 && midSentence > 0.5;
 
   const paragraphs = [];
   let current = '';
@@ -53,7 +58,13 @@ export function splitParagraphs(raw) {
       prevLen = 0;
       continue;
     }
-    const continues = current && hardWrapped && prevLen >= wrap * 0.7 && !DIALOG_START.test(line);
+    const continues =
+      current &&
+      hardWrapped &&
+      prevLen >= wrap * 0.7 &&
+      !DIALOG_START.test(line) &&
+      // A line that ends a sentence well short of the margin ends the paragraph.
+      !(SENTENCE_END.test(current) && prevLen < wrap * 0.85);
     if (continues) {
       current = current.endsWith('-') && /[a-záéíóúñü]$/i.test(current.slice(0, -1))
         ? current.slice(0, -1) + line // word split by hyphen at line end
@@ -76,7 +87,8 @@ function splitSentences(paragraph, lang) {
     const seg = new Intl.Segmenter(lang, { granularity: 'sentence' });
     parts = Array.from(seg.segment(paragraph), (s) => s.segment);
   } else {
-    parts = paragraph.match(/[^.!?…]+(?:[.!?…]+["'»”’)\]]*\s*|$)/g) || [paragraph];
+    parts = paragraph.match(/[^.!?…]*[.!?…]+["'»”’)\]]*\s*|[^.!?…]+$/g) || [paragraph];
+    if (parts.join('') !== paragraph) parts = [paragraph]; // never lose text
   }
   // Merge fragments that are too short to speak on their own ("—", "1.", etc.).
   const merged = [];
@@ -88,22 +100,26 @@ function splitSentences(paragraph, lang) {
   return merged.flatMap(splitLong);
 }
 
-/** Split a very long sentence at commas/semicolons so TTS engines handle it well. */
+/**
+ * Split a very long sentence so TTS engines handle it well: at a comma or
+ * semicolon near the middle, else at a space, else (no spaces at all) every
+ * MAX_CHUNK characters. Each cut is strictly inside the text, so it always ends.
+ */
 function splitLong(sentence) {
   if (sentence.length <= MAX_CHUNK) return [sentence];
   const mid = sentence.length / 2;
-  let best = -1;
+  let cut = -1;
   const re = /[;:,—)]\s/g;
   let m;
   while ((m = re.exec(sentence))) {
-    const cut = m.index + 1;
-    if (cut > 40 && sentence.length - cut > 40 && (best < 0 || Math.abs(cut - mid) < Math.abs(best - mid))) best = cut;
+    const at = m.index + 2; // after the punctuation and its space
+    if (at > 40 && sentence.length - at > 40 && (cut < 0 || Math.abs(at - mid) < Math.abs(cut - mid))) cut = at;
   }
-  if (best < 0) {
-    best = sentence.lastIndexOf(' ', MAX_CHUNK);
-    if (best < 40) best = MAX_CHUNK;
+  if (cut < 0) {
+    const space = sentence.lastIndexOf(' ', MAX_CHUNK);
+    cut = space >= 40 ? space + 1 : MAX_CHUNK;
   }
-  return [...splitLong(sentence.slice(0, best + 1)), ...splitLong(sentence.slice(best + 1))];
+  return [...splitLong(sentence.slice(0, cut)), ...splitLong(sentence.slice(cut))];
 }
 
 /**
@@ -136,6 +152,7 @@ export function parseBook(raw, lang = 'es') {
 export function speakable(text) {
   return text
     .replace(/[*_#=~|<>[\]{}]+/g, ' ')
+    .replace(/[-—–_.·•]{3,}/g, (m) => (/^\.+$/.test(m) ? '...' : ' ')) // separator lines
     .replace(/\.{4,}/g, '...')
     .replace(/\s+/g, ' ')
     .trim();

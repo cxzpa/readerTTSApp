@@ -2,6 +2,7 @@
 import { listBooks, addBook, deleteBook, hashText, getText, requestPersistence } from './db.js';
 import { decodeText, detectLang, parseBook, titleFromFileName } from './text.js';
 import { getSettings } from './settings.js';
+import { unlockAudio } from './voice.js';
 import { escapeHtml, formatDuration, relativeDate, coverColor, icon, toast } from './ui.js';
 
 const $ = (id) => document.getElementById(id);
@@ -42,7 +43,9 @@ export function initLibrary({ open }) {
   });
   $('continue-card').addEventListener('click', () => {
     const id = $('continue-card').dataset.book;
-    if (id) onOpen(id, { autoplay: true });
+    if (!id) return;
+    unlockAudio(); // the book starts playing after it opens, outside this tap
+    onOpen(id, { autoplay: true });
   });
 
   setupDragAndDrop();
@@ -75,6 +78,10 @@ export async function importFiles(files) {
       }
       const lang = detectLang(text);
       const { chunks } = parseBook(text, lang);
+      if (!chunks.length) {
+        toast(`"${file.name}" no tiene texto para leer`);
+        continue;
+      }
       const id = await hashText(text);
       const now = Date.now();
       const { book, isNew } = await addBook(

@@ -22,6 +22,7 @@ export class Player extends EventTarget {
   load(chunks, index = 0) {
     this.stop();
     this.chunks = chunks;
+    this.ended = false;
     this.index = clamp(index, 0, Math.max(0, chunks.length - 1));
     this.emit('index', { index: this.index });
   }
@@ -41,7 +42,12 @@ export class Player extends EventTarget {
   play() {
     if (!this.engine || !this.chunks.length) return;
     if (this.playing) return;
-    if (this.index >= this.chunks.length) this.index = 0;
+    if (this.ended || this.index >= this.chunks.length) {
+      // Finished the book: start again from the beginning.
+      this.ended = false;
+      this.index = 0;
+      this.emit('index', { index: 0, seek: true });
+    }
     this.playing = true;
     this.emit('state', { playing: true });
     if (this.engine.supportsResume && this.engine.isPausedMidChunk) {
@@ -75,6 +81,8 @@ export class Player extends EventTarget {
   }
 
   seek(index) {
+    if (!this.chunks.length) return;
+    this.ended = false;
     const i = clamp(index, 0, this.chunks.length - 1);
     this.index = i;
     this.emit('index', { index: i, seek: true });
@@ -112,8 +120,16 @@ export class Player extends EventTarget {
             onLoading: (loading) => this.emit('loading', { loading }),
           });
         } catch (err) {
-          if (err?.cancelled) return;
           if (token !== this.token) return;
+          if (err?.cancelled) {
+            // Speech cut off by something outside the player (another app, a voice preview):
+            // show it as paused instead of pretending to play.
+            if (err.external && this.playing) {
+              this.playing = false;
+              this.emit('state', { playing: false });
+            }
+            return;
+          }
           this.playing = false;
           this.emit('state', { playing: false });
           this.emit('error', { message: err?.message || String(err) });
@@ -126,6 +142,7 @@ export class Player extends EventTarget {
       const next = i + 1;
       if (next >= this.chunks.length) {
         this.index = this.chunks.length - 1;
+        this.ended = true;
         this.playing = false;
         this.emit('state', { playing: false });
         this.emit('finished', {});

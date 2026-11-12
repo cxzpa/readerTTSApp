@@ -4,7 +4,7 @@ import { getBook, getText, updateBook } from './db.js';
 import { parseBook, speakable } from './text.js';
 import { getSettings, setSettings, onSettingsChange } from './settings.js';
 import { Player } from './player.js';
-import { engineFor, engineLabel } from './voice.js';
+import { engineFor, engineLabel, unlockAudio } from './voice.js';
 import { onNeuralProgress } from './tts/neural.js';
 import { openSettings } from './settings-ui.js';
 import { escapeHtml, formatDuration, setIcon, toast, icon } from './ui.js';
@@ -25,14 +25,18 @@ let activeIndex = -1;
 let follow = true;
 let saveTimer = 0;
 let wakeLock = null;
-let statusOverride = '';
+let downloadPct = null; // neural model download progress, while the reader waits for it
 let wordCursor = { index: -1, pos: 0 };
 let programmaticScrollUntil = 0;
 
 export function initReader({ back }) {
   $('back-btn').addEventListener('click', back);
   $('r-settings').addEventListener('click', () => openSettings(book?.lang || 'es'));
-  playBtn.addEventListener('click', () => player.toggle());
+  playBtn.addEventListener('click', () => {
+    if (!player.playing) unlockAudio();
+    player.toggle();
+  });
+  window.addEventListener('lector:preview', () => player.pause());
   $('prev-btn').addEventListener('click', () => player.skip(-1));
   $('next-btn').addEventListener('click', () => player.skip(1));
   $('speed-btn').addEventListener('click', openSpeed);
@@ -77,7 +81,6 @@ export function initReader({ back }) {
   player.addEventListener('word', (e) => onWord(e.detail));
   player.addEventListener('loading', (e) => {
     playBtn.classList.toggle('loading', e.detail.loading);
-    statusOverride = e.detail.loading ? 'Preparando la voz…' : '';
     updateStatus();
   });
   player.addEventListener('error', (e) => toast(e.detail.message, 6000));
@@ -91,9 +94,8 @@ export function initReader({ back }) {
   });
 
   onNeuralProgress(({ loaded, total }) => {
-    if (!book || !total) return;
-    statusOverride = `Descargando voz… ${Math.round((loaded / total) * 100)}%`;
-    if (loaded >= total) statusOverride = 'Preparando la voz…';
+    if (!total) return;
+    downloadPct = loaded >= total ? null : Math.round((loaded / total) * 100);
     updateStatus();
   });
 
@@ -137,10 +139,18 @@ export function initReader({ back }) {
   updateSleepChip();
 }
 
+let openRequest = 0;
+
+/**
+ * Open a book in the reader. Returns true when opened, false when the book
+ * doesn't exist, or 'cancelled' if the user left before it finished opening.
+ */
 export async function openBook(id, { autoplay = false } = {}) {
   closeBook();
+  const req = ++openRequest;
   const meta = await getBook(id);
   const text = meta && (await getText(id));
+  if (req !== openRequest) return 'cancelled';
   if (!meta || text == null) {
     toast('No se encontró el libro');
     return false;
@@ -149,6 +159,7 @@ export async function openBook(id, { autoplay = false } = {}) {
   ({ chunks } = parseBook(text, book.lang));
   charsAfter = new Array(chunks.length + 1).fill(0);
   for (let i = chunks.length - 1; i >= 0; i--) charsAfter[i] = charsAfter[i + 1] + chunks[i].text.length;
+  const total = chunks.length;
 
   $('r-title').textContent = book.title;
   document.title = `${book.title} · Lector`;
@@ -159,10 +170,13 @@ export async function openBook(id, { autoplay = false } = {}) {
   const s = getSettings();
   player.paragraphPause = s.paragraphPause;
   player.load(chunks, Math.min(book.position || 0, chunks.length - 1));
+  if (book.progress >= 0.999) player.ended = true; // pressing play starts over
   await applyEngine();
+  if (req !== openRequest) return 'cancelled';
   follow = true;
   requestAnimationFrame(() => scrollToActive(false));
-  await updateBook(id, { lastOpenedAt: Date.now(), totalChunks: chunks.length });
+  await updateBook(id, { lastOpenedAt: Date.now(), totalChunks: total });
+  if (req !== openRequest) return 'cancelled';
   if ('mediaSession' in navigator) {
     navigator.mediaSession.metadata = new MediaMetadata({ title: book.title, artist: 'Lector', album: 'Biblioteca' });
   }
@@ -171,13 +185,18 @@ export async function openBook(id, { autoplay = false } = {}) {
 }
 
 export function closeBook() {
+  openRequest++; // cancels a book that is still opening
   if (!book) return;
   player.stop();
   player.setSleepTimer(0);
   savePosition(true);
   releaseWakeLock();
+  clearWord();
   book = null;
   chunks = [];
+  spans = [];
+  activeIndex = -1;
+  player.load([]); // so media keys can't start a book that is no longer on screen
   spans = [];
   activeIndex = -1;
   textEl.innerHTML = '';
@@ -260,7 +279,8 @@ function onWord({ index, start, length }) {
 
 function clearWord() {
   const span = spans[wordCursor.index];
-  if (span && span.firstElementChild) span.textContent = chunks[wordCursor.index].text;
+  const chunk = chunks[wordCursor.index];
+  if (span && chunk && span.firstElementChild) span.textContent = chunk.text;
   wordCursor = { index: -1, pos: 0 };
 }
 
@@ -293,7 +313,6 @@ function onState(playing) {
   setIcon(playBtn, playing ? 'pause' : 'play');
   playBtn.setAttribute('aria-label', playing ? 'Pausar' : 'Leer');
   if (!playing) playBtn.classList.remove('loading');
-  if (!playing) statusOverride = '';
   if ('mediaSession' in navigator) navigator.mediaSession.playbackState = playing ? 'playing' : 'paused';
   updateWakeLock();
   updateStatus();
@@ -305,7 +324,14 @@ function updateStatus() {
   const s = getSettings();
   const voice = engineLabel() === 'neural' ? 'Voz neuronal' : 'Voz del dispositivo';
   const state = player.playing ? 'Leyendo' : 'En pausa';
-  $('r-status').textContent = statusOverride || `${state} · ${voice} · ${s.rate.toFixed(2).replace(/\.?0+$/, '')}×`;
+  // While the neural voice is still generating (or downloading) the current sentence, say so.
+  const engine = player.engine;
+  const waiting = player.playing && engine?.supportsResume && engine.current && !engine.current.loaded;
+  if (waiting) {
+    $('r-status').textContent = downloadPct !== null ? `Descargando voz… ${downloadPct}%` : 'Preparando la voz…';
+    return;
+  }
+  $('r-status').textContent = `${state} · ${voice} · ${s.rate.toFixed(2).replace(/\.?0+$/, '')}×`;
 }
 
 function savePosition(now) {
@@ -314,7 +340,7 @@ function savePosition(now) {
   const id = book.id;
   const position = player.index;
   const progress = chunks.length > 1 ? (charsAfter[0] - charsAfter[position]) / charsAfter[0] : 0;
-  const finished = position >= chunks.length - 1 && !player.playing;
+  const finished = player.ended;
   const write = () => updateBook(id, { position, progress: finished ? 1 : progress, lastOpenedAt: Date.now() });
   if (now) write();
   else saveTimer = setTimeout(write, 1500);

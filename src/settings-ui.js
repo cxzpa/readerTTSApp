@@ -150,6 +150,7 @@ onNeuralProgress(({ voiceId, loaded, total }) => {
 
 async function preview(text, voiceId) {
   stopPreview();
+  window.dispatchEvent(new Event('lector:preview')); // the reader pauses so voices don't overlap
   const s = getSettings();
   if (voiceId) {
     try {

@@ -28,3 +28,9 @@ export function engineLabel() {
   const s = getSettings();
   return s.engine === 'neural' && neuralTtsAvailable() ? 'neural' : 'system';
 }
+
+/** Must run synchronously in a tap so mobile browsers allow audio that starts later. */
+export function unlockAudio() {
+  if (engineLabel() === 'neural') neuralEngine.unlock();
+  else if (systemTtsAvailable()) systemEngine.unlock();
+}
