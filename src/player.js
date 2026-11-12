@@ -166,6 +166,7 @@ export class Player extends EventTarget {
   /** Stop reading after `minutes` (0 = off). The neural voice fades out gently. */
   setSleepTimer(minutes) {
     clearTimeout(this.sleepTimer);
+    this.sleepId = (this.sleepId || 0) + 1; // cancels a fade-out in progress
     this.sleepAt = minutes ? Date.now() + minutes * 60000 : 0;
     if (minutes) {
       this.sleepTimer = setTimeout(() => this.#sleep(), minutes * 60000);
@@ -177,11 +178,18 @@ export class Player extends EventTarget {
     if (this.sleeping) return;
     this.sleeping = true;
     clearTimeout(this.sleepTimer);
+    const id = this.sleepId;
     const engine = this.engine;
     if (engine?.setVolume && this.playing) {
       for (let v = 1; v >= 0; v -= 0.1) {
         engine.setVolume(Math.max(0, v));
         await wait(400);
+        if (id !== this.sleepId) {
+          // Timer changed or the book was closed during the fade: leave reading alone.
+          engine.setVolume(1);
+          this.sleeping = false;
+          return;
+        }
       }
     }
     this.pause();

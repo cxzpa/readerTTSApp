@@ -58,11 +58,20 @@ class KeepAlive {
       a.volume = 0.05;
       a.setAttribute('aria-hidden', 'true');
       a.addEventListener('pause', () => {
+        // Our own pause() fires this event later (asynchronously): skip it.
+        if (this.ownPause) {
+          this.ownPause = false;
+          return;
+        }
         // Paused by the system, not by us: tell the reader.
         if (this.wanted) {
           this.wanted = false;
           this.onExternalPause?.();
         }
+      });
+      a.addEventListener('play', () => {
+        // Resumed by the system while the book is paused: stop it again.
+        if (!this.wanted && !this.priming) this.#pause();
       });
       this.audio = a;
     }
@@ -84,7 +93,14 @@ class KeepAlive {
 
   stop() {
     this.wanted = false;
-    if (this.audio && !this.audio.paused) this.audio.pause();
+    this.#pause();
+  }
+
+  #pause() {
+    if (this.audio && !this.audio.paused) {
+      this.ownPause = true;
+      this.audio.pause();
+    }
   }
 
   /** Prime the element inside a user gesture for a play that starts later. */
@@ -92,11 +108,16 @@ class KeepAlive {
     const a = this.#element();
     if (!a || this.unlocked || !a.paused) return;
     this.unlocked = true;
+    this.priming = true;
     a.play().then(
       () => {
-        if (!this.wanted) a.pause();
+        this.priming = false;
+        if (!this.wanted) this.#pause();
       },
-      () => (this.unlocked = false),
+      () => {
+        this.priming = false;
+        this.unlocked = false;
+      },
     );
   }
 }

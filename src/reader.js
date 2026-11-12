@@ -111,6 +111,7 @@ export function initReader({ back }) {
     if ('rate' in patch) {
       updateSpeedChip();
       onIndex(player.index);
+      updatePositionState(true);
     }
     if ('keepAwake' in patch) updateWakeLock();
     if ('wordHighlight' in patch && !s.wordHighlight) clearWord();
@@ -260,7 +261,8 @@ function onIndex(i) {
   $('r-percent').textContent = `${percent(i)}%`;
   $('r-remaining').textContent = remainingText(i);
   savePosition(false);
-  updatePositionState(false);
+  // While paused there are few updates, so report every move (seek, notification seek).
+  updatePositionState(!player.playing);
   updateStatus();
 }
 
@@ -475,7 +477,7 @@ function setupMediaSession() {
     const chars = d.seekTime * charsPerSecond();
     let i = chunks.length - 1;
     for (let j = 0; j < chunks.length; j++) {
-      if (charsAfter[0] - charsAfter[j + 1] > chars) {
+      if (charsAfter[0] - charsAfter[j + 1] > chars + 0.01) {
         i = j;
         break;
       }

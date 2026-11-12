@@ -102,11 +102,20 @@ export class NeuralEngine {
     this.onExternalPause = null;
     // The system can pause the element itself (a call, another app's audio).
     this.audio.addEventListener('pause', () => {
+      // Our own pause()/stop() fire this event later (asynchronously): skip it.
+      if (this.ownPause) {
+        this.ownPause = false;
+        return;
+      }
       const entry = this.current;
       if (entry?.loaded && !this.paused && !this.audio.ended) {
         this.paused = true;
         this.onExternalPause?.();
       }
+    });
+    this.audio.addEventListener('play', () => {
+      // Resumed by the system while the reader is paused: stop it again.
+      if (this.paused && this.current) this.#pauseAudio();
     });
   }
 
@@ -207,6 +216,8 @@ export class NeuralEngine {
           const a = this.audio;
           if (entry.url) URL.revokeObjectURL(entry.url);
           entry.url = URL.createObjectURL(blob);
+          // Loading a new source drops any 'pause' event still queued from stop().
+          this.ownPause = false;
           a.src = entry.url;
           a.playbackRate = this.rate;
           a.preservesPitch = true;
@@ -248,7 +259,14 @@ export class NeuralEngine {
 
   pause() {
     this.paused = true;
-    this.audio.pause();
+    this.#pauseAudio();
+  }
+
+  #pauseAudio() {
+    if (!this.audio.paused) {
+      this.ownPause = true;
+      this.audio.pause();
+    }
   }
 
   resume() {
@@ -265,7 +283,7 @@ export class NeuralEngine {
   stop() {
     const entry = this.current;
     this.current = null;
-    this.audio.pause();
+    this.#pauseAudio();
     this.audio.onended = null;
     if (entry) {
       if (entry.url) URL.revokeObjectURL(entry.url);
