@@ -274,9 +274,21 @@ function renderTabs() {
 // row, so nothing shifts under the finger and nothing covers other books.
 // The list is re-sorted once things are quiet.
 
-const pendingMoves = new Map(); // id -> { prev, at }
+const pendingMoves = new Map(); // id -> { prev, after, at }
 let settleTimer = 0;
+let movesActive = false; // busy marker held while undo rows are on screen
 const SETTLE_MS = 5000;
+
+/** End the undo period: no timer left behind, busy marker released. */
+function endMoves() {
+  clearTimeout(settleTimer);
+  settleTimer = 0;
+  pendingMoves.clear();
+  if (movesActive) {
+    movesActive = false;
+    busyEnd('shelf-move');
+  }
+}
 
 /** Order value that puts a book on top of a shelf in "Mi orden" (undefined if unused). */
 function topOrder(read) {
@@ -290,8 +302,15 @@ async function toggleRead(id, { keyboard = false } = {}) {
   const li = $('book-list').querySelector(`[data-book="${id}"]`);
   const read = !book.read;
   const prev = { read: !!book.read, readAt: book.readAt ?? null, order: book.order };
-  pendingMoves.set(id, { prev, at: Date.now() });
-  if (pendingMoves.size === 1) busyStart('shelf-move');
+  // Remember the book just above it in "Mi orden", so an undo puts it back next to it
+  // even if the shelf is reordered in the meantime.
+  const ordered = [...shelf()].sort(compareBooks('manual'));
+  const after = ordered[ordered.findIndex((b) => b.id === id) - 1]?.id ?? null;
+  pendingMoves.set(id, { prev, after, at: Date.now() });
+  if (!movesActive) {
+    movesActive = true;
+    busyStart('shelf-move');
+  }
   // Swap the row for an undo row of the same height right away (before any await).
   if (li) {
     const height = li.offsetHeight;
@@ -314,7 +333,14 @@ async function undoMove(id, { keyboard = false } = {}) {
   if (!entry || Date.now() - entry.at < 450) return;
   pendingMoves.delete(id);
   const book = books.find((b) => b.id === id);
-  if (book) Object.assign(book, entry.prev);
+  const restore = { ...entry.prev };
+  if (Number.isFinite(restore.order)) {
+    // Back right below the book that was above it (or on top if it was first).
+    const above = entry.after && books.find((b) => b.id === entry.after && !!b.read === restore.read);
+    if (above && Number.isFinite(above.order)) restore.order = above.order + 0.5;
+    else if (!entry.after) restore.order = topOrder(restore.read) ?? restore.order;
+  }
+  if (book) Object.assign(book, restore);
   if (!pendingMoves.size) {
     settleNow(); // nothing else pending: re-render the shelf now
   } else {
@@ -323,7 +349,7 @@ async function undoMove(id, { keyboard = false } = {}) {
     renderTabs();
   }
   if (keyboard) $('book-list').querySelector(`[data-read="${id}"]`)?.focus();
-  await updateBook(id, entry.prev);
+  await updateBook(id, restore);
 }
 
 function scheduleSettle() {
@@ -333,8 +359,22 @@ function scheduleSettle() {
 
 /** Drop the undo rows and show each shelf sorted again. */
 function settleNow() {
+  const list = $('book-list');
+  // Never re-render under a drag in progress: try again a bit later.
+  if (list.classList.contains('is-dragging')) {
+    clearTimeout(settleTimer);
+    settleTimer = setTimeout(settleNow, 800);
+    return;
+  }
+  // Keep keyboard focus in the list: focus the row now at the same position.
+  const focusedRow = list.contains(document.activeElement) ? document.activeElement.closest('#book-list > li') : null;
+  const focusIndex = focusedRow ? [...list.children].indexOf(focusedRow) : -1;
   renderContinue();
   renderList(); // ends pending moves and their busy marker
+  if (focusIndex >= 0) {
+    const rows = list.children;
+    (rows[Math.min(focusIndex, rows.length - 1)] || $('lib-tabs').querySelector('input:checked'))?.focus();
+  }
 }
 
 function canDragNow() {
@@ -359,11 +399,7 @@ function rowHtml(b, canDrag) {
 
 function renderList() {
   // A full render (search, sort, tab, refresh) also ends any pending undo rows.
-  if (pendingMoves.size) {
-    clearTimeout(settleTimer);
-    pendingMoves.clear();
-    busyEnd('shelf-move');
-  }
+  endMoves();
   const q = $('lib-search').value.trim().toLowerCase();
   const onShelf = shelf();
   const filtered = q ? onShelf.filter((b) => b.title.toLowerCase().includes(q)) : onShelf;
