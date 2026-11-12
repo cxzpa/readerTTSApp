@@ -5,11 +5,11 @@ import { join } from 'node:path';
 
 const root = new URL('..', import.meta.url).pathname;
 const out = join(root, 'public', 'vendor');
+// Only the single-threaded builds: multi-threading needs cross-origin isolation
+// headers, which static hosts like GitHub Pages can't send.
 const files = [
   ['node_modules/onnxruntime-web/dist/ort-wasm-simd.wasm', 'ort/ort-wasm-simd.wasm'],
   ['node_modules/onnxruntime-web/dist/ort-wasm.wasm', 'ort/ort-wasm.wasm'],
-  ['node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm', 'ort/ort-wasm-simd-threaded.wasm'],
-  ['node_modules/onnxruntime-web/dist/ort-wasm-threaded.wasm', 'ort/ort-wasm-threaded.wasm'],
   ['node_modules/@diffusionstudio/piper-wasm/build/piper_phonemize.wasm', 'piper/piper_phonemize.wasm'],
   ['node_modules/@diffusionstudio/piper-wasm/build/piper_phonemize.data', 'piper/piper_phonemize.data'],
 ];
