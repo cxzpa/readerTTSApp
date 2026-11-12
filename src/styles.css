@@ -352,11 +352,38 @@ svg.i {
   width: 40px;
 }
 
-.toast {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  width: max-content;
+.book.moved {
+  justify-content: space-between;
+  gap: 12px;
+  padding-right: 4px;
+  background: var(--surface-2);
+  cursor: default;
+}
+
+.moved-text {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.moved-text b {
+  color: var(--text);
+}
+
+.undo-btn {
+  flex: none;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--accent);
+  font-weight: 700;
 }
 
 @media (max-width: 400px) {
@@ -371,22 +398,7 @@ svg.i {
   }
 }
 
-.toast-action {
-  flex: none;
-  padding: 4px 6px;
-  border: 0;
-  background: transparent;
-  color: var(--accent);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-:root:not([data-theme='dark']) .toast-action {
-  color: #f0b48a;
-}
-
-.manual-hint {
+:root:not([data-theme='dark']) .manual-hint {
   margin: 0 0 6px;
   color: var(--muted);
   font-size: 0.85rem;

@@ -36,7 +36,13 @@ export function initLibrary({ open }) {
     const box = e.target.closest('[data-read]');
     if (box) {
       e.stopPropagation();
-      toggleRead(box.dataset.read);
+      toggleRead(box.dataset.read, { keyboard: e.detail === 0 });
+      return;
+    }
+    const undo = e.target.closest('[data-undo]');
+    if (undo) {
+      e.stopPropagation();
+      undoMove(undo.dataset.undo, { keyboard: e.detail === 0 });
       return;
     }
     const del = e.target.closest('[data-delete]');
@@ -263,24 +269,101 @@ function renderTabs() {
   $('lib-tabs').querySelectorAll('input').forEach((r) => (r.checked = r.value === currentTab()));
 }
 
-/** Move a book between "Por leer" and "Leídos" (its reading position is kept). */
-async function toggleRead(id, { undoable = true } = {}) {
+// ---- Moving books between shelves ----
+// A moved book stays in place for a few seconds as a "pasó a Leídos · Deshacer"
+// row, so nothing shifts under the finger and nothing covers other books.
+// The list is re-sorted once things are quiet.
+
+const pendingMoves = new Map(); // id -> { prev, at }
+let settleTimer = 0;
+const SETTLE_MS = 5000;
+
+/** Order value that puts a book on top of a shelf in "Mi orden" (undefined if unused). */
+function topOrder(read) {
+  const orders = books.filter((b) => !!b.read === read && Number.isFinite(b.order)).map((b) => b.order);
+  return orders.length ? Math.min(...orders) - 1 : undefined;
+}
+
+async function toggleRead(id, { keyboard = false } = {}) {
   const book = books.find((b) => b.id === id);
-  if (!book) return;
+  if (!book || pendingMoves.has(id)) return;
+  const li = $('book-list').querySelector(`[data-book="${id}"]`);
   const read = !book.read;
-  const previousOrder = book.order;
-  // Clearing `order` puts it on top of the other shelf in "Mi orden", like a new book.
-  await updateBook(id, { read, readAt: read ? Date.now() : null, order: undefined });
-  await refreshLibrary();
-  const msg = read ? `"${book.title}" pasó a Leídos` : `"${book.title}" volvió a Por leer`;
-  const undo = async () => {
-    await updateBook(id, { read: !read, readAt: book.readAt ?? null, order: previousOrder });
-    await refreshLibrary();
-  };
-  toast(msg, 5000, undoable ? { label: 'Deshacer', run: undo } : null);
+  const prev = { read: !!book.read, readAt: book.readAt ?? null, order: book.order };
+  pendingMoves.set(id, { prev, at: Date.now() });
+  if (pendingMoves.size === 1) busyStart('shelf-move');
+  // Swap the row for an undo row of the same height right away (before any await).
+  if (li) {
+    const height = li.offsetHeight;
+    li.outerHTML = `<li class="book moved" data-moved="${id}" style="min-height:${height}px">
+      <span class="moved-text">${read ? 'Pasó a <b>Leídos</b>' : 'Volvió a <b>Por leer</b>'}: ${escapeHtml(book.title)}</span>
+      <button type="button" class="undo-btn" data-undo="${id}">Deshacer</button>
+    </li>`;
+  }
+  const patch = { read, readAt: read ? Date.now() : null, order: topOrder(read) };
+  Object.assign(book, patch);
+  renderTabs();
+  if (keyboard) $('book-list').querySelector(`[data-undo="${id}"]`)?.focus();
+  scheduleSettle();
+  await updateBook(id, patch);
+}
+
+async function undoMove(id, { keyboard = false } = {}) {
+  const entry = pendingMoves.get(id);
+  // Ignore the second tap of a double-tap on the checkbox.
+  if (!entry || Date.now() - entry.at < 450) return;
+  pendingMoves.delete(id);
+  const book = books.find((b) => b.id === id);
+  if (book) Object.assign(book, entry.prev);
+  if (!pendingMoves.size) {
+    settleNow(); // nothing else pending: re-render the shelf now
+  } else {
+    const row = $('book-list').querySelector(`[data-moved="${id}"]`);
+    if (row && book) row.outerHTML = rowHtml(book, canDragNow());
+    renderTabs();
+  }
+  if (keyboard) $('book-list').querySelector(`[data-read="${id}"]`)?.focus();
+  await updateBook(id, entry.prev);
+}
+
+function scheduleSettle() {
+  clearTimeout(settleTimer);
+  settleTimer = setTimeout(settleNow, SETTLE_MS);
+}
+
+/** Drop the undo rows and show each shelf sorted again. */
+function settleNow() {
+  renderContinue();
+  renderList(); // ends pending moves and their busy marker
+}
+
+function canDragNow() {
+  return getSettings().librarySort === 'manual' && !$('lib-search').value.trim() && shelf().length > 1;
+}
+
+function rowHtml(b, canDrag) {
+  return `
+    <li class="book" data-book="${b.id}" tabindex="0" role="button" aria-label="Abrir ${escapeHtml(b.title)}">
+      ${canDrag ? `<button type="button" class="drag-handle" data-drag aria-label="Mover ${escapeHtml(b.title)}. Usa las flechas arriba y abajo.">${icon('grip')}</button>` : ''}
+      <div class="book-cover" style="background:${coverColor(b.title)}">${escapeHtml(b.title.trim()[0]?.toUpperCase() || '?')}</div>
+      <div class="book-info">
+        <h3>${escapeHtml(b.title)}</h3>
+        <p>${bookStatus(b)}${b.lastOpenedAt ? ` · ${relativeDate(b.lastOpenedAt)}` : ''}</p>
+        <div class="progress"><span style="width:${(b.progress * 100).toFixed(1)}%"></span></div>
+      </div>
+      <button type="button" class="read-box" data-read="${b.id}" role="checkbox" aria-checked="${b.read ? 'true' : 'false'}"
+        aria-label="${b.read ? 'Leído' : 'Marcar como leído'}: ${escapeHtml(b.title)}" title="${b.read ? 'Marcar como no leído' : 'Marcar como leído'}"><span class="box">${icon('check')}</span></button>
+      <button class="icon-btn danger" data-delete="${b.id}" aria-label="Quitar ${escapeHtml(b.title)}">${icon('trash')}</button>
+    </li>`;
 }
 
 function renderList() {
+  // A full render (search, sort, tab, refresh) also ends any pending undo rows.
+  if (pendingMoves.size) {
+    clearTimeout(settleTimer);
+    pendingMoves.clear();
+    busyEnd('shelf-move');
+  }
   const q = $('lib-search').value.trim().toLowerCase();
   const onShelf = shelf();
   const filtered = q ? onShelf.filter((b) => b.title.toLowerCase().includes(q)) : onShelf;
@@ -302,23 +385,7 @@ function renderList() {
       ? 'Todavía no hay libros leídos. Toca la casilla de un libro para marcarlo como leído.'
       : 'No tienes libros pendientes. ¡Todos están en Leídos!';
   renderSortControls(q);
-  $('book-list').innerHTML = visible
-    .map(
-      (b) => `
-    <li class="book" data-book="${b.id}" tabindex="0" role="button" aria-label="Abrir ${escapeHtml(b.title)}">
-      ${canDrag ? `<button type="button" class="drag-handle" data-drag aria-label="Mover ${escapeHtml(b.title)}. Usa las flechas arriba y abajo.">${icon('grip')}</button>` : ''}
-      <div class="book-cover" style="background:${coverColor(b.title)}">${escapeHtml(b.title.trim()[0]?.toUpperCase() || '?')}</div>
-      <div class="book-info">
-        <h3>${escapeHtml(b.title)}</h3>
-        <p>${bookStatus(b)}${b.lastOpenedAt ? ` · ${relativeDate(b.lastOpenedAt)}` : ''}</p>
-        <div class="progress"><span style="width:${(b.progress * 100).toFixed(1)}%"></span></div>
-      </div>
-      <button type="button" class="read-box" data-read="${b.id}" role="checkbox" aria-checked="${b.read ? 'true' : 'false'}"
-        aria-label="${b.read ? 'Leído' : 'Marcar como leído'}: ${escapeHtml(b.title)}" title="${b.read ? 'Marcar como no leído' : 'Marcar como leído'}"><span class="box">${icon('check')}</span></button>
-      <button class="icon-btn danger" data-delete="${b.id}" aria-label="Quitar ${escapeHtml(b.title)}">${icon('trash')}</button>
-    </li>`,
-    )
-    .join('');
+  $('book-list').innerHTML = visible.map((b) => rowHtml(b, canDrag)).join('');
 }
 
 function setupDragAndDrop() {

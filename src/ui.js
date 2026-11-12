@@ -41,21 +41,9 @@ export function setIcon(el, name) {
 }
 
 let toastTimer;
-/** Show a short message; `action` ({ label, run }) adds a button such as "Deshacer". */
-export function toast(message, ms = 3200, action = null) {
+export function toast(message, ms = 3200) {
   const el = document.getElementById('toast');
   el.textContent = message;
-  if (action) {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'toast-action';
-    btn.textContent = action.label;
-    btn.addEventListener('click', () => {
-      el.hidden = true;
-      action.run();
-    });
-    el.append(btn);
-  }
   el.hidden = false;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => (el.hidden = true), ms);
